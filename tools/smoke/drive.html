@@ -38,6 +38,7 @@
     vw=<px>   把 iframe 宽度设成指定值，用来模拟窄屏
     scroll=1  每一步顺带滚到目标附近（截图用）
     fx=off    关掉背景动效，让 headless 的虚拟时间预算不被 rAF 吃光
+    nolog=1   跑完把调试浮层藏掉（只截图时用，--dump-dom 抓断言时不要加）
 -->
 <iframe id="fr" src="../../index.html"></iframe>
 <script>
@@ -49,6 +50,14 @@
 
   // 在 load 之前就把宽度定下来，页面首帧量到的就是窄屏尺寸
   if (Q.get('vw')) fr.style.width = Q.get('vw') + 'px';
+
+  // 截图用：等断言都打印完了再把浮层藏掉，别挡住页面
+  if (Q.get('nolog')) {
+    setTimeout(function () {
+      var p = document.getElementById('drivelog');
+      if (p) p.style.display = 'none';
+    }, 3000);
+  }
 
   function show(txt) {
     var p = document.getElementById('drivelog');

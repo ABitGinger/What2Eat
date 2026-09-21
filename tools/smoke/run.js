@@ -97,7 +97,8 @@ function runStep(browser, step, keep) {
   if (keep) {
     fs.mkdirSync(OUT, { recursive: true });
     const shot = path.join(OUT, step + '.png');
-    runOnce(browser, common.concat(['--user-data-dir=' + profileDir(step + '-shot'), '--screenshot=' + shot, url]));
+    // 截图那次多带一个 nolog=1，让驱动器跑完后把调试浮层藏掉
+    runOnce(browser, common.concat(['--user-data-dir=' + profileDir(step + '-shot'), '--screenshot=' + shot, url + '&nolog=1']));
     fs.writeFileSync(path.join(OUT, step + '.log.txt'), (log || '(no log)') + '\n', 'utf8');
   }
 
