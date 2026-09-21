@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今天吃什么 · 冒烟测试</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; }
+  iframe { display: block; width: 100vw; height: 100vh; border: 0; }
+  #drivelog {
+    position: fixed; inset: 0 0 auto 0; z-index: 99999;
+    margin: 0; padding: 6px 10px; max-width: 100%;
+    max-height: 46vh; overflow: hidden;
+    font: 12px/1.5 Consolas, "Courier New", monospace;
+    color: #7cff9b; background: rgba(0, 0, 0, .86);
+    white-space: pre-wrap; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<!--
+  冒烟测试驱动器：把真实的 index.html 装进 iframe，用「真实点击」跑一遍关键流程，
+  把每一步的断言打印到左上角，方便用 headless 截图/导出来核对。
+
+  用法（先起一个静态服务器）：
+    python -m http.server 8765
+    node tools/smoke/run.js draw-where
+    node tools/smoke/run.js --all
+
+  可用 step：
+    gate      仅看首次进入引导
+    reload    同一浏览器 profile 下第二次打开，验证自动读取本地数据
+    draw-where / what / follow   三种抽取
+    editor / roster / share / bulk / theme / switches / import / badimport / empty
+-->
+<iframe id="fr" src="../../index.html"></iframe>
+<script>
+(function () {
+  'use strict';
+  var Q = new URLSearchParams(location.search);
+  var step = Q.get('step') || 'gate';
+  var fr = document.getElementById('fr');
+
+  function show(txt) {
+    var p = document.getElementById('drivelog');
+    if (!p) { p = document.createElement('pre'); p.id = 'drivelog'; document.body.appendChild(p); }
+    p.textContent += txt + '\n';
+  }
+
+  fr.addEventListener('load', function () {
+    var w = fr.contentWindow, d = fr.contentDocument, WTE = w.WTE;
+    var log = show;
+    function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+    function q(sel) { return d.querySelector(sel); }
+    function qa(sel) { return [].slice.call(d.querySelectorAll(sel)); }
+    function toastText() {
+      return qa('.toast').map(function (t) { return t.textContent.trim(); }).join(' ; ') || '-';
+    }
+    async function reveal(sel) {
+      if (!Q.get('scroll')) return;
+      d.documentElement.style.scrollBehavior = 'auto';
+      w.scrollTo(0, Math.max(0, (q(sel) ? q(sel).getBoundingClientRect().top + w.scrollY - 8 : 0)));
+      await sleep(500);
+      w.scrollTo(0, Math.max(0, (q(sel) ? q(sel).getBoundingClientRect().top + w.scrollY - 8 : 0)));
+      await sleep(300);
+    }
+    async function skipGate() {
+      q('#gate [data-act="gate-skip"]').click();
+      await sleep(120);
+      log('bar=' + q('#bar-sub').textContent);
+      log('stats=' + JSON.stringify(WTE.store.stats()));
+      log('orbitNodes=' + qa('.orbit__node').length);
+      if (Q.get('fx') === 'off') {
+        // 关掉背景动效，避免无限 rAF 循环吃掉 headless 的虚拟时间预算
+        WTE.store.mutate(function (st) { st.theme.fx = 'off'; });
+        WTE.ui.applyTheme();
+      }
+    }
+
+    (async function () {
+      try {
+        log('step=' + step);
+        log('boot=' + d.body.dataset.boot + ' err=' + (d.body.dataset.error || '-'));
+
+        if (step === 'gate') { log('gateHidden=' + q('#gate').hidden); return; }
+
+        if (step === 'reload') {
+          log('reload: gateHidden=' + q('#gate').hidden);
+          log('reload: hasStored=' + WTE.store.hasStored() + ' seen=' + WTE.store.seen());
+          log('reload: bar=' + q('#bar-sub').textContent);
+          log('reload: canteens=' + WTE.store.get().canteens.length);
+          return;
+        }
+
+        await skipGate();
+        log('gateHidden=' + q('#gate').hidden);
+
+        if (step === 'home') return;
+
+        if (step === 'draw-where' || step === 'follow') {
+          WTE.ui.setMode('where');
+          await WTE.ui.performDraw('where');
+          await sleep(200);
+          var r = WTE.ui.state.result;
+          log('mode=' + r.mode + ' luck=' + r.luck + ' label=' + r.label.label);
+          log('picks=' + r.picks.map(function (p) {
+            return p.role + ':' + (p.stall ? p.stall.name : (p.canteen ? p.canteen.name : 'null'));
+          }).join(' | '));
+          log('cards=' + qa('.pick').length + ' title=' + (q('.result__title') || {}).textContent);
+          await reveal('.result');
+          if (step !== 'follow') return;
+
+          var btn = q('[data-act="followup"]');
+          log('followupBtn=' + !!btn);
+          if (btn) { btn.click(); await sleep(2400); }
+          log('2nd mode=' + WTE.ui.state.result.mode + ' picks=' + WTE.ui.state.result.picks.map(function (p) {
+            return p.role + ':' + (p.stall ? p.stall.name + '@' + p.canteen.name : 'null');
+          }).join(' | '));
+          q('[data-act="reroll"]').click();
+          await sleep(220);
+          log('afterReroll=' + WTE.ui.state.result.picks.map(function (p) {
+            return p.role + ':' + (p.stall ? p.stall.name : 'null');
+          }).join(' | '));
+          await reveal('.result');
+          return;
+        }
+
+        if (step === 'draw-what') {
+          WTE.ui.setMode('what');
+          await WTE.ui.performDraw('what');
+          await sleep(200);
+          var rw = WTE.ui.state.result;
+          log('mode=' + rw.mode + ' luck=' + rw.luck + ' ' + rw.label.label);
+          log('picks=' + rw.picks.map(function (p) {
+            return p.role + ':' + (p.stall ? p.stall.name + '@' + p.canteen.name : 'null');
+          }).join(' | '));
+          await reveal('.result');
+          return;
+        }
+
+        if (step === 'editor') {
+          q('#btn-settings').click();
+          await sleep(100);
+          q('[data-tab="data"]').click();
+          await sleep(80);
+          log('editorCards=' + qa('.canteen').length);
+          q('.canteen [data-act="canteen-toggle"]').click();
+          await sleep(80);
+          log('openBody=' + qa('.canteen.is-open').length + ' stalls=' + qa('.stall').length);
+          q('[data-act="add-canteen"]').click();
+          await sleep(80);
+          log('afterAdd=' + qa('.canteen').length + ' total=' + WTE.store.get().canteens.length);
+          return;
+        }
+
+        if (step === 'roster') {
+          q('#btn-roster').click();
+          await sleep(220);
+          log('rosterOpen=' + q('#panel-roster').classList.contains('is-open'));
+          log('nodes=' + qa('.node').length + ' bursts=' + qa('.node__burst').length);
+          return;
+        }
+
+        if (step === 'share') {
+          q('#btn-settings').click();
+          await sleep(80);
+          q('[data-tab="share"]').click();
+          await sleep(600);
+          var u = q('#share-url').value;
+          log('shareLen=' + u.length + ' head=' + u.slice(0, 44));
+          log('note=' + q('#share-note').textContent);
+          log('storeNote=' + q('#store-note').textContent);
+          var before = WTE.store.stats();
+          var rt = await w.WTE.store.decodePayload(u).then(function (raw) {
+            var res = w.WTE.store.normalize(raw);
+            return res.state.canteens.length + '/' +
+              res.state.canteens.reduce(function (n, c) { return n + c.stalls.length; }, 0);
+          });
+          log('roundtrip=' + rt + ' original=' + before.canteens + '/' + before.stalls);
+          return;
+        }
+
+        if (step === 'bulk') {
+          q('#btn-settings').click();
+          await sleep(80);
+          q('[data-tab="data"]').click();
+          await sleep(60);
+          q('[data-act="open-bulk"]').click();
+          await sleep(60);
+          q('#bulk-text').value = '测试食堂A\n- 档口1\n- 档口2\n测试食堂B > 只有这个档口';
+          q('[data-act="apply-bulk"]').click();
+          await sleep(140);
+          var st = WTE.store.get();
+          var last = st.canteens[st.canteens.length - 1];
+          log('total=' + st.canteens.length + ' last=' + last.name + ' [' +
+              last.stalls.map(function (s) { return s.name; }).join(',') + ']');
+          log('stats=' + JSON.stringify(WTE.store.stats()));
+          return;
+        }
+
+        if (step === 'theme') {
+          q('[data-act="theme-preset"][data-color="#22c55e"]').click();
+          await sleep(90);
+          log('theme=' + WTE.store.get().theme.primary + ' --h=' + d.documentElement.style.getPropertyValue('--h'));
+          q('[data-group="appearance"] [data-value="light"]').click();
+          await sleep(90);
+          log('appearance=' + WTE.store.get().theme.appearance);
+          return;
+        }
+
+        if (step === 'switches') {
+          q('#btn-settings').click();
+          await sleep(140);
+          var inp = q('#opt-sound');
+          var knob = inp.nextElementSibling.querySelector('i');
+          log('soundChecked=' + inp.checked + ' autoscrollChecked=' + q('#opt-autoscroll').checked);
+          log('knobTransform=' + w.getComputedStyle(knob).transform);
+          inp.click();
+          await sleep(80);
+          log('afterClick soundChecked=' + inp.checked + ' themeSound=' + WTE.store.get().theme.sound);
+          return;
+        }
+
+        if (step === 'import') {
+          q('#btn-settings').click();
+          await sleep(80);
+          q('[data-tab="share"]').click();
+          await sleep(500);
+          var link = q('#share-url').value;
+          log('built=' + link.slice(0, 40) + '...');
+          WTE.store.resetTo({ version: 2, canteens: [{ name: '临时食堂', stalls: [{ name: '临时档口' }] }] });
+          log('afterWipe=' + WTE.store.get().canteens.length);
+          q('[data-act="close-settings"]').click();
+          await sleep(140);
+          q('#btn-settings').click();
+          await sleep(80);
+          q('[data-tab="share"]').click();
+          await sleep(60);
+          q('#import-text').value = link;
+          q('[data-act="import-text"]').click();
+          await sleep(700);
+          var s2 = WTE.store.stats();
+          log('restored=' + s2.canteens + '/' + s2.stalls);
+          log('toast=' + toastText());
+          return;
+        }
+
+        if (step === 'badimport') {
+          q('#btn-settings').click();
+          await sleep(80);
+          q('[data-tab="share"]').click();
+          await sleep(60);
+          q('#import-text').value = '这不是配置，只是一句话';
+          q('[data-act="import-text"]').click();
+          await sleep(400);
+          log('toast=' + toastText());
+          log('canteens=' + WTE.store.get().canteens.length);
+          return;
+        }
+
+        if (step === 'empty') {
+          WTE.store.mutate(function (st) { st.canteens = []; });
+          await WTE.ui.performDraw('where');
+          await sleep(300);
+          log('toast=' + toastText());
+          log('settingsOpened=' + q('#panel-settings').classList.contains('is-open'));
+          return;
+        }
+
+        log('unknown step: ' + step);
+      } catch (e) {
+        log('EXCEPTION: ' + (e && e.message) + ' | ' + String((e && e.stack) || '').split('\n')[1]);
+      }
+    })();
+  });
+})();
+</script>
+</body>
+</html>
