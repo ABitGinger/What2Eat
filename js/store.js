@@ -13,9 +13,11 @@
   var KEY_LEGACY = 'wte.state.v1';
   var KEY_SEEN = 'wte.seen.v1';
 
-  var SCHEMA_VERSION = 2;
+  var SCHEMA_VERSION = 3;
   var MAX_CANTEENS = 400;
   var MAX_STALLS = 1200;
+  var MAX_PLACES = 80;
+  var MAX_NEAR = 12;
 
   var APPEARANCES = ['dark', 'light'];
   var FX_LEVELS = ['full', 'lite', 'off'];
@@ -53,7 +55,46 @@
     };
   }
 
-  function normalizeCanteen(raw, index, usedIds) {
+  /**
+   * 地点（出发地）：教学馆、综一、综二、宿舍区……
+   * 只保留 id / name / emoji / area 四个字段，够用且好分享。
+   */
+  function normalizePlace(raw, index, usedIds) {
+    var o = (raw && typeof raw === 'object') ? raw : { name: String(raw || '') };
+    var base = str(o.id, '') || ('p' + (index + 1));
+    var id = base, n = 2;
+    while (usedIds[id]) { id = base + '-' + n; n++; }
+    usedIds[id] = true;
+    return {
+      id: id,
+      name: str(o.name, '') || ('地点 ' + (index + 1)),
+      emoji: str(o.emoji, '').slice(0, 4) || '📍',
+      area: str(o.area, '').slice(0, 60)
+    };
+  }
+
+  /**
+   * 把 canteen.near 里的东西解析成地点 id。
+   * 允许写 id，也允许直接写地点名字（导入手写 JSON 时更友好）；
+   * 认不出来的直接丢掉并计入 unknown，由调用方决定要不要提示。
+   */
+  function resolveNear(raw, placeById, placeByName, unknown) {
+    if (!Array.isArray(raw)) return [];
+    var out = [];
+    for (var i = 0; i < raw.length && out.length < MAX_NEAR; i++) {
+      var key = str(raw[i], '');
+      if (!key) continue;
+      var id = placeById[key] ? key : (placeByName[key] ? placeByName[key].id : null);
+      if (!id) {
+        if (unknown.indexOf(key) === -1) unknown.push(key);
+        continue;
+      }
+      if (out.indexOf(id) === -1) out.push(id);
+    }
+    return out;
+  }
+
+  function normalizeCanteen(raw, index, usedIds, placeById, placeByName, unknownNear) {
     var o = (raw && typeof raw === 'object') ? raw : { name: String(raw || '') };
     var base = str(o.id, '') || ('c' + (index + 1));
     var id = base, n = 2;
@@ -84,6 +125,7 @@
       note: str(o.note, '').slice(0, 200),
       weight: Math.round(weight),
       enabled: o.enabled === false ? false : true,
+      near: resolveNear(o.near, placeById, placeByName, unknownNear),
       stalls: list
     };
   }
@@ -129,21 +171,62 @@
     };
   }
 
-  function normalizeLast(raw, canteens) {
+  function normalizeLast(raw, canteens, places) {
     if (!raw || typeof raw !== 'object') return null;
     var ids = {};
     canteens.forEach(function (c) { ids[c.id] = c; });
+    var placeIds = {};
+    places.forEach(function (p) { placeIds[p.id] = p; });
     var mode = raw.mode === 'what' ? 'what' : 'where';
     var cIds = Array.isArray(raw.canteenIds) ? raw.canteenIds.filter(function (id) { return !!ids[id]; }).slice(0, 2) : [];
     var sIds = Array.isArray(raw.stallIds) ? raw.stallIds.slice(0, 2) : [];
     if (!cIds.length && !sIds.length) return null;
+    var origin = raw.origin && placeIds[raw.origin] ? raw.origin : null;
     return {
       mode: mode,
       at: isFinite(Number(raw.at)) ? Number(raw.at) : Date.now(),
       luck: Math.round(U.clamp(Number(raw.luck) || 0, 0, 100)),
+      origin: origin,
       canteenIds: cIds,
       stallIds: sIds
     };
+  }
+
+  /**
+   * 老数据升级：v2 及以前没有「地点」，如果这份清单看着就是大工那份示例
+   * （食堂名字能对上默认示例），就按名字把地点和「离哪近」补回去。
+   * 名字对不上就什么都不做 —— 宁可没有地点，也不要凭空塞一堆陌生的地标。
+   */
+  function upgradeLegacyPlaces(o, warnings) {
+    if (!o || Number(o.version) >= SCHEMA_VERSION) return;
+    if (Array.isArray(o.places) && o.places.length) return;
+    var def = global.WTE_DEFAULT_DATA;
+    if (!def || !Array.isArray(def.places) || !def.places.length) return;
+    if (!Array.isArray(o.canteens) || !o.canteens.length) return;
+
+    var nearByName = {};
+    def.canteens.forEach(function (c) { nearByName[String(c.name || '').trim()] = c.near || []; });
+
+    var need = {};
+    var hits = [];
+    o.canteens.forEach(function (c) {
+      var nm = c && String(c.name || '').trim();
+      var near = nm && nearByName[nm];
+      if (!near || !near.length) return;
+      hits.push({ raw: c, near: near });
+      near.forEach(function (id) { need[id] = true; });
+    });
+    if (!hits.length) return;
+
+    // 只引入真正被用到的那些地点，不把整份地图塞给用户
+    o.places = def.places.filter(function (p) { return need[p.id]; }).map(function (p) {
+      return { id: p.id, name: p.name, emoji: p.emoji, area: p.area };
+    });
+    hits.forEach(function (h) {
+      var has = Array.isArray(h.raw.near) && h.raw.near.length;
+      if (!has) h.raw.near = h.near.slice();
+    });
+    warnings.push('检测到旧版本数据，已按大工示例补上「出发地」和食堂的「离哪近」，可在控制台修改。');
   }
 
   /**
@@ -159,6 +242,24 @@
       errors.push('数据不是合法的配置对象。');
       o = {};
     }
+    upgradeLegacyPlaces(o, warnings);
+
+    if (!Array.isArray(o.places)) {
+      if (o.places !== undefined) warnings.push('places 字段不是数组，已忽略。');
+      o.places = [];
+    }
+    if (o.places.length > MAX_PLACES) {
+      warnings.push('地点数量超过 ' + MAX_PLACES + '，多余的已截断。');
+      o.places = o.places.slice(0, MAX_PLACES);
+    }
+    var usedPlaceIds = {};
+    var places = o.places.map(function (p, i) { return normalizePlace(p, i, usedPlaceIds); });
+    var placeById = {}, placeByName = {};
+    places.forEach(function (p) {
+      placeById[p.id] = p;
+      if (!placeByName[p.name]) placeByName[p.name] = p;
+    });
+
     if (!Array.isArray(o.canteens)) {
       if (o.canteens !== undefined) warnings.push('canteens 字段不是数组，已忽略。');
       o.canteens = [];
@@ -169,19 +270,30 @@
     }
 
     var usedIds = {};
-    var canteens = o.canteens.map(function (c, i) { return normalizeCanteen(c, i, usedIds); });
+    var unknownNear = [];
+    var canteens = o.canteens.map(function (c, i) {
+      return normalizeCanteen(c, i, usedIds, placeById, placeByName, unknownNear);
+    });
+    if (unknownNear.length) {
+      warnings.push('这些「离哪近」的地点在清单里不存在，已忽略：' + unknownNear.slice(0, 6).join('、'));
+    }
 
     var stallsTotal = canteens.reduce(function (n, c) { return n + c.stalls.length; }, 0);
     if (!canteens.length) warnings.push('清单里还没有任何食堂。');
     else if (!stallsTotal) warnings.push('清单里还没有任何档口。');
 
+    // 出发地是本地偏好，指向一个已经不存在的地点时直接归零（= 任意）
+    var origin = (typeof o.origin === 'string' && placeById[o.origin]) ? o.origin : null;
+
     var out = {
       version: SCHEMA_VERSION,
       meta: normalizeMeta(o.meta, fallbackMeta),
       theme: normalizeTheme(o.theme),
+      places: places,
+      origin: origin,
       canteens: canteens,
       stats: normalizeStats(o.stats),
-      last: normalizeLast(o.last, canteens),
+      last: normalizeLast(o.last, canteens, places),
       updatedAt: Date.now()
     };
     return { state: out, errors: errors, warnings: warnings };
@@ -308,22 +420,42 @@
   function get() { return state; }
 
   function stats() {
-    if (!state) return { canteens: 0, enabledCanteens: 0, stalls: 0, enabledStalls: 0 };
-    var ec = 0, st = 0, es = 0;
+    if (!state) return { places: 0, canteens: 0, enabledCanteens: 0, stalls: 0, enabledStalls: 0, tagged: 0 };
+    var ec = 0, st = 0, es = 0, tagged = 0;
     state.canteens.forEach(function (c) {
       if (c.enabled) ec++;
+      if ((c.near || []).length) tagged++;
       c.stalls.forEach(function (s) {
         st++;
         if (s.enabled) es++;
       });
     });
-    return { canteens: state.canteens.length, enabledCanteens: ec, stalls: st, enabledStalls: es };
+    return {
+      places: state.places.length,
+      canteens: state.canteens.length, enabledCanteens: ec,
+      stalls: st, enabledStalls: es,
+      tagged: tagged
+    };
   }
 
   function findCanteen(id) {
     if (!state) return null;
     for (var i = 0; i < state.canteens.length; i++) if (state.canteens[i].id === id) return state.canteens[i];
     return null;
+  }
+
+  function findPlace(id) {
+    if (!state || !id) return null;
+    for (var i = 0; i < state.places.length; i++) if (state.places[i].id === id) return state.places[i];
+    return null;
+  }
+
+  /** 某个地点被多少个（启用的）食堂标了「离哪近」 */
+  function placeUsage(placeId) {
+    if (!state) return 0;
+    return state.canteens.filter(function (c) {
+      return c.enabled && (c.near || []).indexOf(placeId) >= 0;
+    }).length;
   }
 
   function findStall(stallId) {
@@ -343,6 +475,7 @@
       version: SCHEMA_VERSION,
       meta: state ? state.meta : {},
       theme: state ? state.theme : {},
+      places: state ? state.places : [],
       canteens: state ? state.canteens : []
     };
     if (withStats && state) {
@@ -436,6 +569,7 @@
     { id: 'both', name: '两条腿走路', desc: '「去哪吃」和「吃什么」都抽过', icon: '🚶' },
     { id: 'chain', name: '家庭套餐', desc: '用追加抽取定了食堂 + 档口', icon: '🍱' },
     { id: 'editor', name: '自耕农', desc: '自己新增了一个食堂', icon: '🌱' },
+    { id: 'nearby', name: '近水楼台', desc: '选了「从哪出发」抽一次', icon: '🧭' },
     { id: 'share', name: '安利成功', desc: '生成了一次分享链接', icon: '📮' },
     { id: 'queen', name: '欧皇', desc: '抽到 95 以上的手气值', icon: '✨' }
   ];
@@ -477,6 +611,8 @@
     setTransient: setTransient,
     clearAll: clearAll,
     findCanteen: findCanteen,
+    findPlace: findPlace,
+    placeUsage: placeUsage,
     findStall: findStall,
     toJSON: toJSON,
     encodeShare: encodeShare,
