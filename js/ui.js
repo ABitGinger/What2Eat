@@ -712,38 +712,153 @@
   /* ================================================================
      清单星系
      ================================================================ */
+  /* 由字符串得到稳定的 [0,1) 伪随机数：让同一个食堂每次重排都落在同一处，
+     不会因为改一个字（触发重渲染）就整片星系乱跳。 */
+  function hash01(str, salt) {
+    var h = 2166136261 ^ ((salt || 0) | 0);
+    var s = String(str);
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return ((h >>> 0) % 100003) / 100003;
+  }
+
   function renderGalaxy() {
     var st = S.get();
     if (!st || !dom.galaxy) return;
     var q = ui.rosterQuery.trim().toLowerCase();
 
-    var w = dom.galaxy.clientWidth || 900;
-    var h = dom.galaxy.clientHeight || global.innerHeight * 0.78;
-    dom.galaxy.innerHTML = '<p class="galaxy__hint">' + (q ? '筛选中' : '悬停 / 点击每个星球，看它的档口') + '</p>';
-
     var list = st.canteens.filter(function (c) {
       if (!q) return true;
       return canteenMatches(c, q);
     });
+
+    dom.galaxy.innerHTML = '<p class="galaxy__hint">' +
+      (q ? '筛选中 · ' + list.length + ' 个食堂' : '悬停 / 点击每个星球，看它的档口') + '</p>';
+
+    var host = dom.galaxy.parentNode;
     if (!list.length) {
-      dom.galaxy.insertAdjacentHTML('beforeend', '<div class="empty" style="margin-top:120px">没有匹配的食堂。</div>');
+      dom.galaxy.style.height = '';
+      dom.galaxy.insertAdjacentHTML('beforeend', '<div class="empty" style="margin-top:140px">没有匹配的食堂。</div>');
       return;
     }
 
-    var cx = w / 2, cy = Math.max(240, h / 2);
-    var base = Math.min(w, h) * 0.13;
-    var maxR = Math.min(w * 0.42, h * 0.42);
-    var golden = Math.PI * (3 - Math.sqrt(5));
+    /* ---- 1. 量可用画布：取父级（滚动容器），避免“自己撑高自己”的反馈 ---- */
+    var PAD_X = 34, PAD_TOP = 66, PAD_BOTTOM = 84, SCROLLBAR = 16;
+    var w = Math.max(300, ((host && host.clientWidth) || global.innerWidth || 900) - SCROLLBAR);
+    var hAvail = Math.max(360, (host && host.clientHeight) || (global.innerHeight || 800) * 0.82);
 
+    var a = Math.max(130, (w - PAD_X * 2) / 2);                   // 椭圆半长轴
+    var bFit = Math.max(96, (hAvail - PAD_TOP - PAD_BOTTOM) / 2);  // 椭圆半短轴上限
+    var n = list.length;
+
+    /* ---- 2. 反推星球直径：把“总外接框面积 / 椭圆面积”压到 DENSITY 以下 ----
+       这是「不挤在一起」的关键——原来直径只跟容器大小有关，
+       13 个食堂时外接框能占到 58% 的面积，必然互相压住。
+       同时约束画布高度：宁可让面板稍微滚动，也不把星球缩成看不清的小点。 */
+    var DENSITY = 0.34, MIN_D = 72, MAX_D = 128;
+    var maxCanvas = hAvail * 1.4;
+    var d = U.clamp(Math.sqrt((Math.PI * a * bFit * DENSITY) / n), MIN_D, MAX_D);
+    var b = 0;
+    for (;;) {
+      b = Math.max((n * d * d) / (DENSITY * Math.PI * a), d * 0.95);
+      if (d <= MIN_D + 0.01) break;
+      if (b * 2 + PAD_TOP + PAD_BOTTOM <= maxCanvas) break;
+      d = Math.max(MIN_D, d - 2);
+    }
+
+    var sizes = list.map(function (c) {
+      return Math.round(d * (0.88 + Math.min(D.enabledStalls(c).length, 16) * 0.014));
+    });
+
+    /* ---- 3. 叶序种子 + 松弛迭代：任意两个星球都留出 gap，绝不允许重叠 ---- */
+    var golden = Math.PI * (3 - Math.sqrt(5));
+    var pts = list.map(function (c, i) {
+      var t = Math.sqrt((i + 0.62) / n);
+      var ang = i * golden + (hash01(c.id, 7) - 0.5) * 0.5;
+      var r = t * 0.92;
+      return { x: Math.cos(ang) * r * a, y: Math.sin(ang) * r * b, s: sizes[i] };
+    });
+
+    var gap = Math.max(12, d * 0.16);
+    var i, j, m, dx, dy, dist, minD, push;
+
+    function separate(iters) {
+      for (var it = 0; it < iters; it++) {
+        var moved = 0;
+        for (i = 0; i < pts.length; i++) {
+          for (j = i + 1; j < pts.length; j++) {
+            var p = pts[i], k = pts[j];
+            dx = k.x - p.x; dy = k.y - p.y;
+            dist = Math.sqrt(dx * dx + dy * dy);
+            minD = (p.s + k.s) / 2 + gap;
+            if (dist >= minD) continue;
+            if (dist < 0.01) {
+              dx = Math.cos((i + 1) * 2.399) * 0.8;
+              dy = Math.sin((j + 1) * 2.399) * 0.8;
+              dist = 0.8;
+            }
+            push = ((minD - dist) / dist) * 0.5;
+            p.x -= dx * push; p.y -= dy * push;
+            k.x += dx * push; k.y += dy * push;
+            moved++;
+          }
+        }
+        // 每个星球各自留出半径，收回到椭圆内
+        for (m = 0; m < pts.length; m++) {
+          var o = pts[m];
+          var ra = Math.max(6, a - o.s / 2);
+          var rb = Math.max(6, b - o.s / 2);
+          var nx = o.x / ra, ny = o.y / rb;
+          var len = Math.sqrt(nx * nx + ny * ny);
+          if (len > 1) { o.x = (nx / len) * ra; o.y = (ny / len) * rb; }
+        }
+        if (!moved) return 0;
+      }
+      var worst = 0; // 残余最大重叠量（px）
+      for (i = 0; i < pts.length; i++) {
+        for (j = i + 1; j < pts.length; j++) {
+          var q1 = pts[i], q2 = pts[j];
+          var over = ((q1.s + q2.s) / 2 + gap) -
+            Math.sqrt((q2.x - q1.x) * (q2.x - q1.x) + (q2.y - q1.y) * (q2.y - q1.y));
+          if (over > worst) worst = over;
+        }
+      }
+      return worst;
+    }
+
+    // 撑开空间重试：宁可让面板滚动，也不接受“挤在一起”
+    for (var pass = 0; pass < 4; pass++) {
+      var worst = separate(220);
+      if (worst <= 1.5) break;
+      b *= 1.16;
+      for (m = 0; m < pts.length; m++) pts[m].y *= 1.16;
+    }
+
+    /* ---- 4. 按实际落点定容器尺寸，并横向居中 ---- */
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    pts.forEach(function (o) {
+      minX = Math.min(minX, o.x - o.s / 2); maxX = Math.max(maxX, o.x + o.s / 2);
+      minY = Math.min(minY, o.y - o.s / 2); maxY = Math.max(maxY, o.y + o.s / 2);
+    });
+    var offX = Math.max(PAD_X, (w - (maxX - minX)) / 2) - minX;
+    var offY = Math.max(PAD_TOP, (hAvail - (maxY - minY)) / 2) - minY;
+    dom.galaxy.style.height =
+      Math.round(Math.max(hAvail, maxY - minY + PAD_TOP + PAD_BOTTOM)) + 'px';
+
+    // 留一份几何快照，方便排查（冒烟测试也会读它）
+    WTE.ui.galaxyGeom = {
+      w: w, hAvail: hAvail, a: a, b: b, d: d, gap: gap, n: n,
+      canvas: Math.round(Math.max(hAvail, maxY - minY + PAD_TOP + PAD_BOTTOM))
+    };
+
+    /* ---- 5. 落 DOM ---- */
     list.forEach(function (c, i) {
-      var size = U.clamp(base * (0.78 + Math.min(D.enabledStalls(c).length, 14) * 0.055), 62, 132);
-      var t = Math.sqrt((i + 0.6) / list.length);
-      var r = maxR * t;
-      var ang = i * golden;
-      var x = cx + Math.cos(ang) * r * 1.16;
-      var y = cy + Math.sin(ang) * r * 0.82;
-      x = U.clamp(x, size / 2 + 8, w - size / 2 - 8);
-      y = U.clamp(y, size / 2 + 40, h - size / 2 - 10);
+      var o = pts[i];
+      var size = o.s;
+      var x = o.x + offX;
+      var y = o.y + offY;
 
       var node = U.el('button', {
         type: 'button',
@@ -751,9 +866,9 @@
         'data-act': 'galaxy-node',
         'data-id': c.id,
         style: 'left:' + (x - size / 2).toFixed(1) + 'px;top:' + (y - size / 2).toFixed(1) + 'px;' +
-               'width:' + size.toFixed(0) + 'px;height:' + size.toFixed(0) + 'px;' +
-               'rotate:' + ((U.rand() - 0.5) * 12).toFixed(1) + 'deg;' +
-               '--delay:' + (U.rand() * 4).toFixed(2) + 's;',
+               'width:' + size + 'px;height:' + size + 'px;' +
+               'rotate:' + ((hash01(c.id, 21) - 0.5) * 12).toFixed(1) + 'deg;' +
+               '--delay:' + (hash01(c.id, 33) * 4).toFixed(2) + 's;',
         title: c.name
       });
 
