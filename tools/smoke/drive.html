@@ -32,6 +32,12 @@
     reload    同一浏览器 profile 下第二次打开，验证自动读取本地数据
     draw-where / what / follow   三种抽取
     editor / roster / share / bulk / theme / switches / import / badimport / empty
+    galaxy / galaxy-narrow / galaxy-many   清单星系的排布断言（不重叠 / 不越界）
+
+  额外查询参数：
+    vw=<px>   把 iframe 宽度设成指定值，用来模拟窄屏
+    scroll=1  每一步顺带滚到目标附近（截图用）
+    fx=off    关掉背景动效，让 headless 的虚拟时间预算不被 rAF 吃光
 -->
 <iframe id="fr" src="../../index.html"></iframe>
 <script>
@@ -40,6 +46,9 @@
   var Q = new URLSearchParams(location.search);
   var step = Q.get('step') || 'gate';
   var fr = document.getElementById('fr');
+
+  // 在 load 之前就把宽度定下来，页面首帧量到的就是窄屏尺寸
+  if (Q.get('vw')) fr.style.width = Q.get('vw') + 'px';
 
   function show(txt) {
     var p = document.getElementById('drivelog');
@@ -75,6 +84,42 @@
         WTE.store.mutate(function (st) { st.theme.fx = 'off'; });
         WTE.ui.applyTheme();
       }
+    }
+
+    /* 量化“挤不挤”：
+       用布局盒（offsetLeft/offsetWidth，不受 inline rotate 影响）算
+       两两“中心距 − 半径和”，负数就是重叠。 */
+    function galaxyReport(tag) {
+      var g = q('#galaxy');
+      var nodes = qa('#galaxy .node');
+      var boxes = nodes.map(function (n) {
+        return {
+          x: n.offsetLeft + n.offsetWidth / 2,
+          y: n.offsetTop + n.offsetHeight / 2,
+          s: n.offsetWidth,
+          l: n.offsetLeft, t: n.offsetTop, w: n.offsetWidth, h: n.offsetHeight
+        };
+      });
+      var minGap = Infinity, worst = '-';
+      for (var i = 0; i < boxes.length; i++) {
+        for (var j = i + 1; j < boxes.length; j++) {
+          var A = boxes[i], B = boxes[j];
+          var gap = Math.sqrt((A.x - B.x) * (A.x - B.x) + (A.y - B.y) * (A.y - B.y)) - (A.s + B.s) / 2;
+          if (gap < minGap) { minGap = gap; worst = i + '-' + j; }
+        }
+      }
+      var out = 0;
+      boxes.forEach(function (b) {
+        if (b.l < -0.5 || b.t < -0.5 ||
+            b.l + b.w > g.clientWidth + 0.5 || b.t + b.h > g.clientHeight + 0.5) out++;
+      });
+      var sizes = boxes.map(function (b) { return b.s; });
+      log(tag + ' nodes=' + nodes.length +
+          ' size=' + (sizes.length ? Math.min.apply(null, sizes) + '~' + Math.max.apply(null, sizes) : '-') +
+          ' minGap=' + (minGap === Infinity ? 'n/a' : minGap.toFixed(1)) + ' worst=' + worst +
+          ' out=' + out + ' canvas=' + (g.style.height || '-') +
+          ' host=' + g.parentNode.clientWidth + 'x' + g.parentNode.clientHeight);
+      log(tag + ' VERDICT=' + ((minGap > 0 && out === 0) ? 'OK' : 'SQUEEZED'));
     }
 
     (async function () {
@@ -158,6 +203,44 @@
           await sleep(220);
           log('rosterOpen=' + q('#panel-roster').classList.contains('is-open'));
           log('nodes=' + qa('.node').length + ' bursts=' + qa('.node__burst').length);
+          return;
+        }
+
+        if (step === 'galaxy' || step === 'galaxy-narrow' || step === 'galaxy-many') {
+          if (step === 'galaxy-many') {
+            // 压测：把食堂数堆到 ~37 个，看排布会不会开始互相压住
+            WTE.store.mutate(function (st) {
+              var seed = st.canteens.slice(0, 6);
+              for (var k = 0; k < 4; k++) {
+                seed.forEach(function (c) {
+                  var copy = JSON.parse(JSON.stringify(c));
+                  copy.name = c.name + '·' + (k + 2) + '号店';
+                  copy.id = 'many-' + k + '-' + c.id;
+                  copy.stalls.forEach(function (s, si) { s.id = copy.id + '-s' + si; });
+                  st.canteens.push(copy);
+                });
+              }
+            });
+          }
+          q('#btn-roster').click();
+          await sleep(340);
+          log('rosterOpen=' + q('#panel-roster').classList.contains('is-open'));
+          var hostEl = q('#galaxy').parentNode;
+          function geom() {
+            var g = WTE.ui.galaxyGeom;
+            return g ? ('hAvail=' + g.hAvail + ' a=' + g.a.toFixed(1) + ' b=' + g.b.toFixed(1) +
+                        ' d=' + g.d.toFixed(1) + ' gap=' + g.gap.toFixed(1) + ' n=' + g.n) : 'null';
+          }
+          log('hostAfterOpen=' + hostEl.clientWidth + 'x' + hostEl.clientHeight + ' ' + geom());
+          galaxyReport('L1');
+          // 重渲染一次（模拟改个字/改主题），确认落点是稳定的、不会乱跳
+          var before = qa('#galaxy .node').map(function (n) { return n.offsetLeft + ',' + n.offsetTop; }).join('|');
+          WTE.ui.renderGalaxy();
+          await sleep(60);
+          var after = qa('#galaxy .node').map(function (n) { return n.offsetLeft + ',' + n.offsetTop; }).join('|');
+          log('hostAfterRerender=' + hostEl.clientWidth + 'x' + hostEl.clientHeight + ' ' + geom());
+          log('stableAcrossRerender=' + (before === after));
+          galaxyReport('L2');
           return;
         }
 

@@ -28,8 +28,12 @@ const SIZE = process.env.SMOKE_SIZE || '1440,900';
 const STEPS = [
   'gate', 'home', 'draw-where', 'draw-what', 'follow',
   'editor', 'roster', 'share', 'bulk', 'theme', 'switches',
-  'import', 'badimport', 'empty'
+  'import', 'badimport', 'empty',
+  'galaxy', 'galaxy-narrow', 'galaxy-many'
 ];
+
+// 需要模拟窄屏的步骤 → iframe 宽度(px)
+const STEP_VW = { 'galaxy-narrow': 430 };
 
 const CANDIDATES = [
   process.env.EDGE_PATH,
@@ -80,7 +84,8 @@ function extractLog(dom) {
 }
 
 function runStep(browser, step, keep) {
-  const url = BASE + '/tools/smoke/drive.html?step=' + encodeURIComponent(step) + '&scroll=1&fx=off';
+  const vw = STEP_VW[step] ? '&vw=' + STEP_VW[step] : '';
+  const url = BASE + '/tools/smoke/drive.html?step=' + encodeURIComponent(step) + '&scroll=1&fx=off' + vw;
   const common = [
     '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
     '--hide-scrollbars', '--window-size=' + SIZE, '--virtual-time-budget=' + BUDGET
@@ -140,7 +145,7 @@ console.log('目标： ' + BASE + '  （先确认静态服务器已启动）\n')
 let failed = 0;
 for (const step of targets) {
   const log = step === 'persist' ? runPersist(browser, keep) : runStep(browser, step, keep);
-  const ok = log && !/EXCEPTION/.test(log) && !/err=(?!-)/.test(log);
+  const ok = log && !/EXCEPTION/.test(log) && !/err=(?!-)/.test(log) && !/VERDICT=SQUEEZED/.test(log);
   if (!ok) failed++;
   console.log('───── ' + step + ' : ' + (ok ? 'OK' : 'FAIL') + ' ─────');
   console.log(log || '(没有拿到断言输出)');
