@@ -1,0 +1,27 @@
+# 编辑器 / IDE
+.idea/
+.vscode/*
+!.vscode/settings.json.example
+*.iml
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+*.lnk
+
+# 日志 / 临时
+*.log
+npm-debug.log*
+.tmp/
+tmp/
+
+# 冒烟测试产物（截图 / 断言日志）
+.smoke-out/
+
+# 依赖（本项目本身零依赖，仅预防）
+node_modules/
+
+# 本地个人数据（不想进版本库的个人清单）
+private/
+*.local.json
