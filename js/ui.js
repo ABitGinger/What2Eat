@@ -1532,7 +1532,7 @@
     });
     if (dom.drawLabel && !ui.busy) dom.drawLabel.textContent = ui.mode === 'what' ? '抽档口' : '抽食堂';
     if (dom.coreVerdict && !ui.busy && !ui.result) {
-      dom.coreVerdict.textContent = ui.mode === 'what' ? '想吃什么？' : '准备好去哪儿？';
+      dom.coreVerdict.textContent = ui.mode === 'what' ? '去哪吃？' : '吃什么？';
     }
   }
 
