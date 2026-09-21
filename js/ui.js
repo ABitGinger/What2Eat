@@ -765,7 +765,7 @@
     if (dom.placeboxSub) {
       dom.placeboxSub.textContent = st.places.length
         ? st.places.length + ' 个地点 · 选了出发地就只抽「离它近」的食堂'
-        : '还没有地点，加几个比如「教学馆」「宿舍区」';
+        : '还没有地点，加几个比如「图书馆」「宿舍区」';
     }
 
     if (!ui.placesOpen) { dom.places.innerHTML = ''; return; }
