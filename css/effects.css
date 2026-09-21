@@ -1,0 +1,270 @@
+/* ==========================================================================
+   effects.css —— 背景层、关键帧动画、揭晓特效
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- 背景层 */
+.fx-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.fx-aurora {
+  position: fixed;
+  inset: -20vmax;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(46px) saturate(130%);
+  opacity: .5;
+}
+.blob {
+  position: absolute;
+  width: 46vmax;
+  height: 46vmax;
+  border-radius: 50%;
+  opacity: .5;
+  mix-blend-mode: screen;
+}
+html[data-appearance="light"] .blob { mix-blend-mode: multiply; opacity: .16; }
+.blob--1 {
+  left: 6%; top: 4%;
+  background: radial-gradient(circle at 40% 40%, var(--brand), transparent 66%);
+  animation: drift1 calc(26s * var(--speed)) ease-in-out infinite alternate;
+}
+.blob--2 {
+  right: 2%; top: 22%;
+  background: radial-gradient(circle at 55% 45%, var(--brand-alt), transparent 66%);
+  animation: drift2 calc(34s * var(--speed)) ease-in-out infinite alternate;
+}
+.blob--3 {
+  left: 34%; bottom: 0%;
+  background: radial-gradient(circle at 50% 50%, var(--brand-partner), transparent 68%);
+  animation: drift3 calc(30s * var(--speed)) ease-in-out infinite alternate;
+}
+
+.fx-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .16;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 74px 74px;
+  mask-image: radial-gradient(ellipse 78% 62% at 50% 42%, #000 8%, transparent 76%);
+  -webkit-mask-image: radial-gradient(ellipse 78% 62% at 50% 42%, #000 8%, transparent 76%);
+  animation: gridPan calc(60s * var(--speed)) linear infinite;
+}
+
+.fx-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse 92% 78% at 50% 40%, transparent 40%, var(--bg) 118%);
+}
+
+.fx-cursor {
+  position: fixed;
+  z-index: 2;
+  top: 0; left: 0;
+  width: 300px; height: 300px;
+  margin: -150px 0 0 -150px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, var(--brand-soft), transparent 62%);
+  opacity: 0;
+  transition: opacity var(--t-slow) var(--ease);
+  will-change: transform;
+}
+body.has-cursor .fx-cursor { opacity: 1; }
+
+.fx-shock {
+  position: fixed;
+  z-index: 60;
+  top: 0; left: 0;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  border: 2px solid var(--brand);
+  pointer-events: none;
+  opacity: 0;
+}
+.fx-shock.is-live { animation: shockOut var(--t-slow) var(--ease) both; }
+
+/* 全屏闪白 */
+.flash {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 45%, hsl(0 0% 100% / .9), transparent 62%);
+  opacity: 0;
+}
+.flash.is-live { animation: flashOut calc(.42s * var(--speed)) var(--ease) both; }
+
+/* ---------------------------------------------------------------- 核心状态 */
+.core__verdict.is-reeling {
+  animation: none;
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: var(--brand-lift);
+  filter: blur(.4px);
+  letter-spacing: .02em;
+}
+.core__verdict.is-locked {
+  animation: lockedPop calc(.7s * var(--speed)) var(--ease-pop) both;
+}
+.core__hint.is-hidden { opacity: 0; }
+
+/* ---------------------------------------------------------------- 结果揭晓 */
+.result.is-dealt .pick { animation: pickIn calc(.72s * var(--speed)) var(--ease-pop) both; }
+.result.is-dealt .pick--primary { animation-delay: .02s; }
+.result.is-dealt .pick--secondary { animation-delay: .16s; }
+.result.is-dealt .result__head { animation: fadeUp calc(.5s * var(--speed)) var(--ease) both; }
+.result.is-dealt .result__link { animation: fadeUp calc(.5s * var(--speed)) var(--ease) .3s both; }
+
+.pick__name { position: relative; }
+.pick.is-landed .pick__name::after {
+  content: "";
+  position: absolute;
+  left: 0; right: -8px; bottom: 4px;
+  height: 8px;
+  z-index: -1;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--brand-soft), transparent);
+  animation: markIn calc(.6s * var(--speed)) var(--ease) both;
+}
+
+/* ---------------------------------------------------------------- 关键帧 */
+@keyframes spin { to { rotate: 360deg; } }
+
+@keyframes sheen {
+  from { background-position: 200% 0; }
+  to   { background-position: -60% 0; }
+}
+
+@keyframes corePulse {
+  0%, 100% { scale: 1; }
+  50% { scale: 1.045; }
+}
+
+@keyframes float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -9px; }
+}
+
+@keyframes drift1 {
+  from { translate: 0 0; scale: 1; }
+  to   { translate: 12vmax 8vmax; scale: 1.18; }
+}
+@keyframes drift2 {
+  from { translate: 0 0; scale: 1.1; }
+  to   { translate: -14vmax 10vmax; scale: .92; }
+}
+@keyframes drift3 {
+  from { translate: 0 0; scale: .95; }
+  to   { translate: 9vmax -12vmax; scale: 1.2; }
+}
+
+@keyframes gridPan {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 74px 74px, 74px 74px; }
+}
+
+@keyframes shockOut {
+  0%   { opacity: .95; scale: 1; border-width: 8px; }
+  100% { opacity: 0; scale: 46; border-width: 1px; }
+}
+
+@keyframes flashOut {
+  0%   { opacity: .85; }
+  100% { opacity: 0; }
+}
+
+@keyframes pickIn {
+  0%   { opacity: 0; translate: 0 34px; scale: .9; filter: blur(10px); }
+  60%  { opacity: 1; filter: blur(0); }
+  100% { opacity: 1; translate: 0 0; scale: 1; filter: blur(0); }
+}
+
+@keyframes markIn {
+  from { scale: 0 1; opacity: 0; }
+  to   { scale: 1 1; opacity: 1; }
+}
+
+@keyframes lockedPop {
+  0%   { scale: .82; filter: blur(8px); opacity: .2; }
+  55%  { scale: 1.1; filter: blur(0); opacity: 1; }
+  100% { scale: 1; }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; translate: 0 14px; }
+  to   { opacity: 1; translate: 0 0; }
+}
+
+@keyframes paneIn {
+  from { opacity: 0; translate: 0 8px; }
+  to   { opacity: 1; translate: 0 0; }
+}
+
+@keyframes gateIn {
+  from { opacity: 0; translate: 0 26px; scale: .95; }
+  to   { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+@keyframes toastIn {
+  from { opacity: 0; translate: 0 20px; scale: .94; }
+  to   { opacity: 1; translate: 0 0; scale: 1; }
+}
+@keyframes toastOut {
+  from { opacity: 1; translate: 0 0; }
+  to   { opacity: 0; translate: 0 12px; scale: .96; }
+}
+
+@keyframes achvIn {
+  0%   { opacity: 0; translate: 40px 0; scale: .9; }
+  70%  { opacity: 1; translate: -4px 0; scale: 1.03; }
+  100% { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+@keyframes shake {
+  0%, 100% { translate: 0 0; }
+  20% { translate: -3px 2px; }
+  40% { translate: 3px -2px; }
+  60% { translate: -2px -2px; }
+  80% { translate: 2px 2px; }
+}
+body.is-shaking .stage__inner { animation: shake calc(.5s * var(--speed)) var(--ease) both; }
+
+@keyframes ringOut {
+  from { opacity: .8; scale: .6; }
+  to   { opacity: 0; scale: 1.6; }
+}
+.node.is-dealt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--brand);
+  animation: ringOut calc(1s * var(--speed)) var(--ease) both;
+}
+
+/* 动效关闭时，保留必要的一次性过渡 */
+html[data-fx="off"] .node,
+html[data-fx="off"] .blob,
+html[data-fx="off"] .fx-grid,
+html[data-fx="off"] .bar__orb,
+html[data-fx="off"] .bar__orb i,
+html[data-fx="off"] .core__ring,
+html[data-fx="off"] .draw__aura,
+html[data-fx="off"] .core__verdict { animation: none !important; }
+html[data-fx="off"] .result.is-dealt .pick,
+html[data-fx="off"] .result.is-dealt .result__head { animation: fadeUp .2s var(--ease) both !important; }
+
+/* 滚动进入结果区时的软性缓动由 scrollIntoView 的 smooth 负责 */

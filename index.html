@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-appearance="dark" data-fx="full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0713">
+<meta name="description" content="今天吃什么 —— 把食堂和档口填进去，让命运帮你决定去哪儿吃、吃什么。数据保存在本地，可分享可导入。">
+<meta name="color-scheme" content="dark light">
+<title>今天吃什么 · 命运抽取器</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/effects.css">
+</head>
+<body data-boot="pending">
+
+<!-- ============ 背景层 ============ -->
+<canvas id="fx-bg" class="fx-bg" aria-hidden="true"></canvas>
+<div class="fx-aurora" aria-hidden="true">
+  <span class="blob blob--1"></span>
+  <span class="blob blob--2"></span>
+  <span class="blob blob--3"></span>
+</div>
+<div class="fx-grid" aria-hidden="true"></div>
+<div class="fx-vignette" aria-hidden="true"></div>
+<div class="fx-cursor" id="fx-cursor" aria-hidden="true"></div>
+<div class="fx-shock" id="fx-shock" aria-hidden="true"></div>
+
+<a class="skip" href="#stage">跳到抽取区</a>
+
+<!-- ============ 顶栏 ============ -->
+<header class="bar">
+  <div class="bar__brand">
+    <span class="bar__orb" aria-hidden="true"><i></i></span>
+    <span class="bar__text">
+      <strong class="bar__title">今天吃什么</strong>
+      <span class="bar__sub" id="bar-sub">正在装载…</span>
+    </span>
+  </div>
+  <nav class="bar__nav" aria-label="主要操作">
+    <button class="chip" id="btn-roster" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.4"/><circle cx="12" cy="4" r="1.6"/><circle cx="12" cy="20" r="1.6"/><circle cx="4" cy="12" r="1.6"/><circle cx="20" cy="12" r="1.6"/><path d="M12 6v4M12 14v4M6 12h4M14 12h4"/></svg>
+      <span>清单星系</span>
+    </button>
+    <button class="chip" id="btn-settings" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2.2"/><circle cx="8" cy="17" r="2.2"/></svg>
+      <span>控制台</span>
+    </button>
+  </nav>
+</header>
+
+<!-- ============ 主舞台 ============ -->
+<main class="stage" id="stage">
+  <div class="stage__inner" id="stage-inner">
+    <div class="core" id="core">
+      <div class="orbit" id="orbit" aria-hidden="true"></div>
+      <span class="core__ring core__ring--a" aria-hidden="true"></span>
+      <span class="core__ring core__ring--b" aria-hidden="true"></span>
+      <span class="core__ring core__ring--c" aria-hidden="true"></span>
+      <span class="core__halo" aria-hidden="true"></span>
+      <div class="core__face" id="core-face">
+        <p class="core__kicker" id="core-kicker">命运抽取器</p>
+        <p class="core__verdict" id="core-verdict">准备好了吗</p>
+        <p class="core__hint" id="core-hint">按空格或点下面的按钮</p>
+      </div>
+    </div>
+
+    <div class="modes" id="modes" role="radiogroup" aria-label="抽取方式">
+      <button class="mode is-on" type="button" role="radio" aria-checked="true" data-mode="where">
+        <span class="mode__blob" aria-hidden="true"></span>
+        <span class="mode__icon" aria-hidden="true">🧭</span>
+        <span class="mode__name">去哪吃</span>
+        <span class="mode__desc">抽主选 / 次选食堂</span>
+      </button>
+      <button class="mode" type="button" role="radio" aria-checked="false" data-mode="what">
+        <span class="mode__blob" aria-hidden="true"></span>
+        <span class="mode__icon" aria-hidden="true">🍜</span>
+        <span class="mode__name">吃什么</span>
+        <span class="mode__desc">直接抽主选 / 次选档口</span>
+      </button>
+    </div>
+
+    <button class="draw" id="btn-draw" type="button">
+      <span class="draw__aura" aria-hidden="true"></span>
+      <span class="draw__label" id="draw-label">抽取</span>
+      <span class="draw__sub" id="draw-sub">长按可以加速</span>
+    </button>
+
+    <p class="stage__tip">
+      <kbd>空格</kbd> 抽取 · <kbd>1</kbd><kbd>2</kbd> 切方式 · <kbd>S</kbd> 控制台 · <kbd>R</kbd> 清单
+    </p>
+  </div>
+</main>
+
+<!-- ============ 结果区 ============ -->
+<section class="result" id="result" aria-live="polite" aria-label="抽取结果"></section>
+
+<footer class="foot">
+  <span class="foot__dot" aria-hidden="true"></span>
+  <span>数据只存在你自己的浏览器里 · 不上传任何服务器</span>
+</footer>
+
+<!-- ============ 控制台 ============ -->
+<aside class="panel panel--right" id="panel-settings" role="dialog" aria-modal="true" aria-label="控制台" hidden>
+  <div class="panel__scrim" data-act="close-settings"></div>
+  <div class="panel__sheet">
+    <header class="panel__head">
+      <div>
+        <p class="panel__kicker">CONTROL DECK</p>
+        <h2 class="panel__title">控制台</h2>
+      </div>
+      <button class="icon-btn" type="button" data-act="close-settings" aria-label="关闭控制台">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="控制台分区">
+      <button class="tab is-on" type="button" role="tab" aria-selected="true" data-tab="look">外观</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" data-tab="data">食堂与档口</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" data-tab="share">数据与分享</button>
+    </div>
+
+    <div class="panel__body">
+      <!-- ---------- 外观 ---------- -->
+      <section class="pane is-on" data-pane="look" role="tabpanel">
+        <div class="field">
+          <div class="field__head">
+            <h3 class="field__title">主题色</h3>
+            <span class="field__hint">整站的颜色都由它推导</span>
+          </div>
+          <div class="swatches" id="swatches"></div>
+          <div class="picker">
+            <label class="picker__box">
+              <input type="color" id="theme-color" value="#ff3d6e" aria-label="自定义主题色">
+              <span class="picker__chip" id="theme-chip"></span>
+              <span class="picker__code" id="theme-code">#FF3D6E</span>
+            </label>
+            <button class="btn btn--ghost" type="button" data-act="theme-random">🎲 随机一个</button>
+          </div>
+          <label class="range">
+            <span>浓烈程度</span>
+            <input type="range" id="theme-sat" min="30" max="100" step="1" value="92">
+            <output id="theme-sat-out">92%</output>
+          </label>
+        </div>
+
+        <div class="field">
+          <div class="field__head">
+            <h3 class="field__title">外观模式</h3>
+            <span class="field__hint">深空 / 浅光</span>
+          </div>
+          <div class="seg" data-group="appearance">
+            <button class="seg__btn is-on" type="button" data-value="dark">深空</button>
+            <button class="seg__btn" type="button" data-value="light">浅光</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field__head">
+            <h3 class="field__title">动效强度</h3>
+            <span class="field__hint">卡顿就调低一点</span>
+          </div>
+          <div class="seg" data-group="fx">
+            <button class="seg__btn is-on" type="button" data-value="full">全开</button>
+            <button class="seg__btn" type="button" data-value="lite">精简</button>
+            <button class="seg__btn" type="button" data-value="off">关闭</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field__head">
+            <h3 class="field__title">音效</h3>
+            <span class="field__hint">抽取时的提示音</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="opt-sound" checked>
+            <span class="switch__track" aria-hidden="true"><i></i></span>
+            <span class="switch__text">开启</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <div class="field__head">
+            <h3 class="field__title">抽取后</h3>
+            <span class="field__hint">揭晓之后自动做什么</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="opt-autoscroll" checked>
+            <span class="switch__track" aria-hidden="true"><i></i></span>
+            <span class="switch__text">自动滚到结果</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- ---------- 食堂与档口 ---------- -->
+      <section class="pane" data-pane="data" role="tabpanel">
+        <div class="toolbar">
+          <input class="input" type="search" id="editor-search" placeholder="搜食堂 / 档口…" aria-label="搜索">
+          <button class="btn btn--primary btn--sm" type="button" data-act="add-canteen">＋ 新食堂</button>
+        </div>
+        <div class="toolbar toolbar--sub">
+          <button class="btn btn--ghost btn--sm" type="button" data-act="open-bulk">批量粘贴</button>
+          <button class="btn btn--ghost btn--sm" type="button" data-act="toggle-all">全选 / 全不选</button>
+          <button class="btn btn--ghost btn--sm" type="button" data-act="collapse-all">全部收起</button>
+        </div>
+        <p class="mini" id="editor-stat"></p>
+        <div class="editor" id="editor"></div>
+      </section>
+
+      <!-- ---------- 数据与分享 ---------- -->
+      <section class="pane" data-pane="share" role="tabpanel">
+        <div class="field">
+          <div class="field__head">
+            <h3 class="field__title">分享链接</h3>
+            <span class="field__hint">整份配置压缩进链接，谁打开谁看到</span>
+          </div>
+          <div class="codebox">
+            <textarea id="share-url" readonly rows="3" spellcheck="false"></textarea>
+          </div>
+          <div class="toolbar toolbar--sub">
+            <button class="btn btn--primary btn--sm" type="button" data-act="copy-link">复制链接</button>
+            <button class="btn btn--ghost btn--sm" type="button" data-act="share-native">系统分享</button>
+            <button class="btn btn--ghost btn--sm" type="button" data-act="copy-json">复制 JSON</button>
+          </div>
+          <p class="mini" id="share-note"></p>
+        </div>
+
+        <div class="field">
+          <div class="field__head">
+            <h3 class="field__title">导入配置</h3>
+            <span class="field__hint">粘贴链接 / JSON，或选文件，或直接把文件拖到页面上</span>
+          </div>
+          <div class="codebox">
+            <textarea id="import-text" rows="4" spellcheck="false" placeholder="在这里粘贴分享链接或 JSON…"></textarea>
+          </div>
+          <div class="toolbar toolbar--sub">
+            <button class="btn btn--primary btn--sm" type="button" data-act="import-text">从文本导入</button>
+            <button class="btn btn--ghost btn--sm" type="button" data-act="import-file">选择文件…</button>
+            <input type="file" id="import-file" accept=".json,application/json,text/plain" hidden>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field__head">
+            <h3 class="field__title">备份与重置</h3>
+            <span class="field__hint">导出后可随时在别的设备导入</span>
+          </div>
+          <div class="toolbar toolbar--sub">
+            <button class="btn btn--ghost btn--sm" type="button" data-act="export-json">导出 .json</button>
+            <button class="btn btn--ghost btn--sm" type="button" data-act="export-md">导出 .md 清单</button>
+            <button class="btn btn--ghost btn--sm" type="button" data-act="load-demo">载入大工示例</button>
+            <button class="btn btn--danger btn--sm" type="button" data-act="clear-all">清空全部</button>
+          </div>
+          <p class="mini" id="store-note"></p>
+        </div>
+      </section>
+    </div>
+  </div>
+</aside>
+
+<!-- ============ 清单星系 ============ -->
+<aside class="panel panel--wide" id="panel-roster" role="dialog" aria-modal="true" aria-label="清单星系" hidden>
+  <div class="panel__scrim" data-act="close-roster"></div>
+  <div class="panel__sheet">
+    <header class="panel__head">
+      <div>
+        <p class="panel__kicker">GALAXY VIEW</p>
+        <h2 class="panel__title">清单星系</h2>
+      </div>
+      <div class="panel__headtools">
+        <input class="input input--sm" type="search" id="roster-search" placeholder="搜点什么…" aria-label="搜索清单">
+        <button class="icon-btn" type="button" data-act="close-roster" aria-label="关闭清单">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </header>
+    <div class="panel__body panel__body--flush">
+      <div class="galaxy" id="galaxy"></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ============ 批量粘贴 ============ -->
+<div class="modal" id="modal-bulk" role="dialog" aria-modal="true" aria-labelledby="bulk-title" hidden>
+  <div class="modal__scrim" data-act="close-bulk"></div>
+  <div class="modal__box">
+    <h2 id="bulk-title">批量粘贴</h2>
+    <p class="mini">每行一个食堂名；以 <code>-</code>、<code>*</code>、<code>·</code> 或数字开头的是档口。也支持 <code>食堂 &gt; 档口</code> 的写法。</p>
+    <textarea id="bulk-text" rows="12" spellcheck="false" placeholder="中心食堂&#10;- 麻辣香锅&#10;- 三楼民族餐厅&#10;第五食堂&#10;- 烤盘饭"></textarea>
+    <div class="toolbar toolbar--end">
+      <label class="switch switch--tight">
+        <input type="checkbox" id="bulk-replace">
+        <span class="switch__track" aria-hidden="true"><i></i></span>
+        <span class="switch__text">替换现有数据</span>
+      </label>
+      <button class="btn btn--ghost" type="button" data-act="close-bulk">取消</button>
+      <button class="btn btn--primary" type="button" data-act="apply-bulk">导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 首次进入 ============ -->
+<div class="gate" id="gate" role="dialog" aria-modal="true" aria-labelledby="gate-title" hidden>
+  <div class="gate__box">
+    <p class="gate__kicker">FIRST LAUNCH</p>
+    <h1 class="gate__title" id="gate-title">先定个调子</h1>
+    <p class="gate__desc">
+      这个工具靠一份「食堂 + 档口」清单运转。你可以直接用一份现成的
+      <b>大连理工大学</b> 示例（校内食堂 + 门口汇源美食城 + 周边热门点），
+      也可以从空白开始自己填 —— 之后在控制台里随时能改。
+    </p>
+    <ul class="gate__list">
+      <li><span>1</span>清单、主题色都只存在这台设备的浏览器里</li>
+      <li><span>2</span>想换设备？生成一条链接或导出一个文件就行</li>
+      <li><span>3</span>不喜欢默认数据，随时一键清空重来</li>
+    </ul>
+    <div class="gate__actions">
+      <button class="btn btn--primary btn--lg" type="button" data-act="gate-skip">
+        <span>跳过，先看效果</span>
+        <small>载入大工示例数据</small>
+      </button>
+      <button class="btn btn--lg" type="button" data-act="gate-custom">
+        <span>我自己填</span>
+        <small>从一份空白清单开始</small>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toaster" id="toaster" aria-live="polite" aria-atomic="false"></div>
+<div class="flash" id="flash" aria-hidden="true"></div>
+
+<script src="js/util.js"></script>
+<script src="js/default-data.js"></script>
+<script src="js/store.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/effects.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+/* ==========================================================================
+   theme.css —— 设计令牌
+   全站颜色由 --h / --s / --l 三个分量推导（由 js/ui.js 从主题色注入）。
+   改一个颜色，整套色板、光晕、渐变、粒子都会跟着变。
+   ========================================================================== */
+
+:root {
+  /* ---- 品牌色（JS 注入的 HSL 分量） ---- */
+  --h: 344;
+  --s: 92%;
+  --l: 62%;
+
+  --brand:        hsl(var(--h) var(--s) var(--l));
+  --brand-lift:   hsl(var(--h) var(--s) calc(var(--l) + 10%));
+  --brand-deep:   hsl(var(--h) var(--s) calc(var(--l) - 18%));
+  --brand-partner: hsl(calc(var(--h) + 42) calc(var(--s) - 6%) calc(var(--l) + 4%));
+  --brand-alt:    hsl(calc(var(--h) + 196) calc(var(--s) - 10%) 64%);
+  --brand-ink:    hsl(var(--h) 70% 10%);
+  --brand-soft:   hsl(var(--h) var(--s) var(--l) / 0.16);
+  --brand-softer: hsl(var(--h) var(--s) var(--l) / 0.08);
+  --brand-line:   hsl(var(--h) var(--s) var(--l) / 0.34);
+  --brand-glow:   hsl(var(--h) var(--s) var(--l) / 0.55);
+  --brand-ring:   hsl(var(--h) var(--s) var(--l) / 0.22);
+
+  /* ---- 底色 / 表面 ---- */
+  --bg:        hsl(calc(var(--h) + 14) 36% 5%);
+  --bg-2:      hsl(calc(var(--h) + 14) 32% 9%);
+  --panel:     hsl(calc(var(--h) + 8) 26% 10% / 0.74);
+  --panel-2:   hsl(calc(var(--h) + 8) 24% 14% / 0.72);
+  --panel-ink: hsl(calc(var(--h) + 8) 26% 10%);
+  --surface:   hsl(var(--h) 24% 18% / 0.5);
+  --surface-2: hsl(var(--h) 24% 22% / 0.42);
+  --line:      hsl(var(--h) 40% 88% / 0.13);
+  --line-2:    hsl(var(--h) 40% 88% / 0.24);
+
+  /* ---- 文字 ---- */
+  --ink:   hsl(var(--h) 26% 97%);
+  --ink-2: hsl(var(--h) 18% 82%);
+  --ink-3: hsl(var(--h) 14% 64%);
+
+  /* ---- 语义色 ---- */
+  --ok:   hsl(150 62% 52%);
+  --warn: hsl(38 92% 58%);
+  --bad:  hsl(2 78% 60%);
+
+  /* ---- 形状 ---- */
+  --r-xs: 10px;
+  --r-sm: 14px;
+  --r-md: 20px;
+  --r-lg: 30px;
+  --r-xl: 44px;
+  --r-pill: 999px;
+
+  /* 有机形（拒绝横平竖直） */
+  --blob-a: 46% 54% 62% 38% / 52% 44% 56% 48%;
+  --blob-b: 62% 38% 44% 56% / 42% 58% 42% 58%;
+  --blob-c: 38% 62% 56% 44% / 58% 46% 54% 42%;
+
+  /* ---- 质感 ---- */
+  --shadow-1: 0 10px 30px -14px hsl(calc(var(--h) + 20) 70% 2% / 0.9);
+  --shadow-2: 0 34px 80px -28px hsl(calc(var(--h) + 20) 70% 2% / 0.95);
+  --shadow-brand: 0 18px 54px -16px var(--brand-glow);
+  --blur: saturate(140%) blur(18px);
+
+  /* ---- 节奏 ---- */
+  --sp-1: 6px;
+  --sp-2: 10px;
+  --sp-3: 16px;
+  --sp-4: 24px;
+  --sp-5: 36px;
+  --sp-6: 56px;
+  --ease: cubic-bezier(.22, .68, .28, 1);
+  --ease-pop: cubic-bezier(.2, 1.6, .36, 1);
+  --t-fast: .16s;
+  --t-mid: .32s;
+  --t-slow: .7s;
+  --speed: 1;
+
+  /* ---- 字体 ---- */
+  --font: "Inter", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI",
+          "Source Han Sans SC", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+  --font-display: "Inter", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Cascadia Mono", monospace;
+}
+
+/* --------------------------------------------------------------------------
+   浅光模式：保留同一套品牌色，把底色与文字翻转
+   -------------------------------------------------------------------------- */
+html[data-appearance="light"] {
+  --bg:        hsl(calc(var(--h) + 12) 62% 98%);
+  --bg-2:      hsl(calc(var(--h) + 12) 66% 94%);
+  --panel:     hsl(0 0% 100% / 0.76);
+  --panel-2:   hsl(0 0% 100% / 0.7);
+  --panel-ink: hsl(0 0% 100%);
+  --surface:   hsl(0 0% 100% / 0.62);
+  --surface-2: hsl(var(--h) 60% 100% / 0.5);
+  --line:      hsl(calc(var(--h) + 200) 30% 24% / 0.14);
+  --line-2:    hsl(calc(var(--h) + 200) 30% 24% / 0.26);
+
+  --ink:   hsl(calc(var(--h) + 200) 34% 12%);
+  --ink-2: hsl(calc(var(--h) + 200) 22% 28%);
+  --ink-3: hsl(calc(var(--h) + 200) 16% 44%);
+
+  --brand:       hsl(var(--h) var(--s) calc(var(--l) - 14%));
+  --brand-lift:  hsl(var(--h) var(--s) calc(var(--l) - 4%));
+  --brand-deep:  hsl(var(--h) var(--s) calc(var(--l) - 26%));
+  --brand-soft:  hsl(var(--h) var(--s) var(--l) / 0.14);
+  --brand-softer:hsl(var(--h) var(--s) var(--l) / 0.07);
+  --brand-line:  hsl(var(--h) var(--s) var(--l) / 0.3);
+  --brand-glow:  hsl(var(--h) var(--s) var(--l) / 0.34);
+
+  --shadow-1: 0 10px 26px -16px hsl(calc(var(--h) + 200) 40% 20% / 0.4);
+  --shadow-2: 0 34px 80px -34px hsl(calc(var(--h) + 200) 40% 20% / 0.42);
+  --shadow-brand: 0 18px 44px -20px var(--brand-glow);
+}
+
+/* --------------------------------------------------------------------------
+   动效强度：精简 / 关闭
+   -------------------------------------------------------------------------- */
+html[data-fx="lite"] {
+  --speed: 1.6;
+}
+html[data-fx="lite"] .blob,
+html[data-fx="lite"] .fx-aurora { opacity: .55; }
+
+html[data-fx="off"] {
+  --speed: 1;
+}
+html[data-fx="off"] .fx-aurora,
+html[data-fx="off"] .fx-grid,
+html[data-fx="off"] .fx-bg,
+html[data-fx="off"] .fx-cursor { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-fx="full"]) * {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
