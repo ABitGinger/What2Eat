@@ -15,15 +15,7 @@
 
 ## 快速开始
 
-**最省事**：直接双击 `index.html`。
-
-**想更稳**（推荐，避免个别浏览器对 `file://` 的限制）：
-
-```bash
-cd what-to-eat
-python -m http.server 8765
-# 打开 http://127.0.0.1:8765/
-```
+请访问 www.ABitGinger.top/What2Eat/
 
 ---
 
