@@ -216,7 +216,8 @@
     ]
   };
 
-  /** 「我自己填」用到的空白模板：地点列表先给一份，地图上自己去勾 */
+  /** 「我自己填」用到的空白模板：地点全空，连地标名都不预置，
+      免得不在大工的人看到一堆跟自己无关的地名（食堂那条只是占位，改个名就能用） */
   var BLANK = {
     version: 3,
     meta: { title: '今天吃什么', city: '', source: '我的清单', note: '' },
@@ -224,7 +225,7 @@
       primary: '#ff3d6e', saturation: 92, appearance: 'dark',
       fx: 'full', sound: true, autoScroll: true
     },
-    places: PLACES,
+    places: [],
     canteens: [
       {
         name: '我的第一个食堂', area: '', emoji: '🍚', tags: [],
