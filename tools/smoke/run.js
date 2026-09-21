@@ -30,7 +30,7 @@ const STEPS = [
   'origin', 'origin-what', 'origin-tight', 'origin-narrow',
   'places', 'legacy',
   'editor', 'roster', 'share', 'bulk', 'theme', 'switches',
-  'import', 'badimport', 'empty',
+  'import', 'badimport', 'empty', 'reset', 'fresh',
   'galaxy', 'galaxy-narrow', 'galaxy-many'
 ];
 
@@ -127,15 +127,35 @@ function runPersist(browser, keep) {
   return log;
 }
 
+/* ---- 重置验证：先在同一 profile 里点「重置」，再重开一次 ----
+   第一次跑 reset（点完按钮后应当回到引导页、存储清空），
+   第二次用 fresh 重开，断言它真的像从没来过：引导还在、存储仍然是空的。 */
+function runResetPersist(browser, keep) {
+  const profile = profileDir('reset');
+  const common = [
+    '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+    '--hide-scrollbars', '--window-size=' + SIZE, '--virtual-time-budget=' + BUDGET,
+    '--user-data-dir=' + profile
+  ];
+  const first = extractLog(runOnce(browser, common.concat(['--dump-dom', BASE + '/tools/smoke/drive.html?step=reset&fx=off'])));
+  const second = extractLog(runOnce(browser, common.concat(['--dump-dom', BASE + '/tools/smoke/drive.html?step=fresh&fx=off'])));
+  const log = [first, second].filter(Boolean).join('\n');
+  if (keep && log) {
+    fs.mkdirSync(OUT, { recursive: true });
+    fs.writeFileSync(path.join(OUT, 'reset-persist.log.txt'), log + '\n', 'utf8');
+  }
+  return log;
+}
+
 /* ---- 主流程 ---- */
 const argv = process.argv.slice(2);
 const keep = argv.includes('--keep');
-const targets = argv.includes('--all') ? STEPS.concat(['persist'])
+const targets = argv.includes('--all') ? STEPS.concat(['persist', 'reset-persist'])
   : argv.filter((a) => a.charAt(0) !== '-');
 
 if (!targets.length) {
   console.log('用法： node tools/smoke/run.js <step...>|--all [--keep]');
-  console.log('可用： ' + STEPS.concat(['persist']).join(', '));
+  console.log('可用： ' + STEPS.concat(['persist', 'reset-persist']).join(', '));
   process.exit(2);
 }
 
@@ -149,7 +169,9 @@ console.log('目标： ' + BASE + '  （先确认静态服务器已启动）\n')
 
 let failed = 0;
 for (const step of targets) {
-  const log = step === 'persist' ? runPersist(browser, keep) : runStep(browser, step, keep);
+  const log = step === 'persist' ? runPersist(browser, keep)
+    : step === 'reset-persist' ? runResetPersist(browser, keep)
+    : runStep(browser, step, keep);
   const ok = log && !/EXCEPTION/.test(log) && !/err=(?!-)/.test(log) && !/VERDICT=(?!OK)/.test(log);
   if (!ok) failed++;
   console.log('───── ' + step + ' : ' + (ok ? 'OK' : 'FAIL') + ' ─────');

@@ -30,6 +30,8 @@
   可用 step：
     gate      仅看首次进入引导
     reload    同一浏览器 profile 下第二次打开，验证自动读取本地数据
+    reset     点「重置」：存储清空 + 回到引导页；fresh 是同一 profile 里的下一次打开，
+              断言它真的像从没来过（外壳见 run.js 的 reset-persist）
     draw-where / what / follow   三种抽取
     origin / origin-what / origin-tight   出发地：正常 / 抽档口 / 附近没食堂时的退化
     places    地点编辑器：改名、新增、勾「离哪近」、删除地点后的悬空引用清理
@@ -160,6 +162,20 @@
           log('persist VERDICT=' + ((rst.canteens.length >= minC &&
               rst.places.length >= minP &&
               (!expOrigin || rst.origin === expOrigin)) ? 'OK' : 'MISS'));
+          return;
+        }
+
+        // ── 重置之后重开：应该像从没来过一样，重新落回「第一次进来」的门 ──
+        if (step === 'fresh') {
+          log('fresh: gateHidden=' + q('#gate').hidden + ' locked=' + d.body.dataset.locked);
+          log('fresh: stored=' + WTE.store.hasStored() + ' seen=' + WTE.store.seen() +
+              ' ls=' + (w.localStorage.getItem('wte.state.v2') === null ? 'state-gone' : 'state-LEFT') +
+              '/' + (w.localStorage.getItem('wte.seen.v1') === null ? 'seen-gone' : 'seen-LEFT'));
+          log('fresh: gateBtns=' + qa('#gate [data-act]').map(function (x) {
+            return x.dataset.act;
+          }).join(','));
+          log('fresh VERDICT=' + ((!q('#gate').hidden && !WTE.store.hasStored() && !WTE.store.seen())
+            ? 'OK' : 'MISS'));
           return;
         }
 
@@ -403,6 +419,64 @@
           return;
         }
 
+        if (step === 'reset') {
+          // 先造点「个人痕迹」：选个出发地、改主题色、抽两把、解锁成就
+          WTE.ui.setOrigin('p-jxg');
+          await sleep(140);
+          WTE.store.mutate(function (st) {
+            st.theme.primary = '#22c55e';
+            st.stats.draws = 7;
+          });
+          WTE.ui.applyTheme();
+          await WTE.ui.performDraw('where');
+          await sleep(200);
+          var b = WTE.store.get();
+          log('reset: before stored=' + WTE.store.hasStored() + ' seen=' + WTE.store.seen() +
+              ' canteens=' + b.canteens.length + ' origin=' + b.origin +
+              ' draws=' + b.stats.draws + ' primary=' + b.theme.primary +
+              ' locked=' + d.body.dataset.locked);
+
+          q('#btn-settings').click();
+          await sleep(160);
+          q('[data-tab="data"]').click();
+          await sleep(140);
+          log('reset: storeNote=' + q('#store-note').textContent);
+          var rbtn = q('[data-act="reset-all"]');
+          var cbtn = q('[data-act="clear-all"]');
+          var rbg = w.getComputedStyle(rbtn).backgroundColor;
+          var cbg = w.getComputedStyle(cbtn).backgroundColor;
+          log('reset: btn=' + !!rbtn + ' besideClear=' +
+              (rbtn && rbtn.previousElementSibling ? rbtn.previousElementSibling.dataset.act : '-'));
+          // 两个红按钮得分得出轻重：清空全部是描边，重置是实心
+          log('reset: clearBg=' + cbg + ' resetBg=' + rbg);
+          w.confirm = function () { return true; };
+          rbtn.click();
+          await sleep(600);
+
+          var st = WTE.store.get();
+          log('reset: after gateHidden=' + q('#gate').hidden + ' locked=' + d.body.dataset.locked);
+          log('reset: after stored=' + WTE.store.hasStored() + ' seen=' + WTE.store.seen() +
+              ' ls=' + (w.localStorage.getItem('wte.state.v2') === null ? 'state-gone' : 'state-LEFT') +
+              '/' + (w.localStorage.getItem('wte.seen.v1') === null ? 'seen-gone' : 'seen-LEFT'));
+          log('reset: after canteens=' + st.canteens.length + ' places=' + st.places.length +
+              ' origin=' + st.origin + ' draws=' + st.stats.draws +
+              ' achievements=' + st.stats.achievements.length +
+              ' primary=' + st.theme.primary + ' resultHidden=' + q('#result').hidden +
+              ' railOn=' + qa('#origin-rail .is-on').length);
+          var blankPrimary = (w.WTE_BLANK_DATA.theme || {}).primary;
+          log('reset VERDICT=' + ((!q('#gate').hidden &&
+              !WTE.store.hasStored() && !WTE.store.seen() &&
+              w.localStorage.getItem('wte.state.v2') === null &&
+              w.localStorage.getItem('wte.seen.v1') === null &&
+              st.canteens.length === 1 && st.origin === null &&
+              st.stats.draws === 0 && st.stats.achievements.length === 0 &&
+              st.theme.primary === blankPrimary &&
+              q('#result').hidden &&
+              rbg !== cbg) ? 'OK' : 'MISS'));
+          await reveal('#gate');
+          return;
+        }
+
         if (step === 'share') {
           q('#btn-settings').click();
           await sleep(80);
@@ -426,6 +500,11 @@
               '/p' + self.places.length + '/n' + selfNear);
           log('share VERDICT=' + (rt === (before.canteens + '/' + before.stalls + '/p' + self.places.length + '/n' + selfNear)
             ? 'OK' : 'MISS'));
+          // 截图用：滚到「数据与分享」页签底部，让「备份与重置」那一排按钮露出来
+          var pb = q('#panel-settings .panel__body');
+          pb.style.scrollBehavior = 'auto';
+          pb.scrollTop = 99999;
+          await sleep(500);
           return;
         }
 
