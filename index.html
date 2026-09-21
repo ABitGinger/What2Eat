@@ -67,6 +67,15 @@
       </div>
     </div>
 
+    <!-- 出发地：默认「任意」，选了就只在标了「离这儿近」的食堂里抽 -->
+    <section class="origin" id="origin" aria-label="出发地">
+      <p class="origin__head">
+        <span class="origin__kicker">从哪出发？</span>
+        <span class="origin__hint" id="origin-hint">不选就是整份清单一起抽</span>
+      </p>
+      <div class="origin__rail" id="origin-rail" role="radiogroup" aria-label="选择出发地"></div>
+    </section>
+
     <div class="modes" id="modes" role="radiogroup" aria-label="抽取方式">
       <button class="mode is-on" type="button" role="radio" aria-checked="true" data-mode="where">
         <span class="mode__blob" aria-hidden="true"></span>
@@ -89,7 +98,7 @@
     </button>
 
     <p class="stage__tip">
-      <kbd>空格</kbd> 抽取 · <kbd>1</kbd><kbd>2</kbd> 切方式 · <kbd>S</kbd> 控制台 · <kbd>R</kbd> 清单
+      <kbd>空格</kbd> 抽取 · <kbd>1</kbd><kbd>2</kbd> 切方式 · <kbd>←</kbd><kbd>→</kbd> 换出发地 · <kbd>S</kbd> 控制台 · <kbd>R</kbd> 清单
     </p>
   </div>
 </main>
@@ -196,8 +205,20 @@
 
       <!-- ---------- 食堂与档口 ---------- -->
       <section class="pane" data-pane="data" role="tabpanel">
+        <!-- 地点：既是「从哪出发」的选项，也是食堂「离哪近」的取值范围 -->
+        <section class="placebox" id="placebox">
+          <button class="placebox__head" type="button" data-act="toggle-places" aria-expanded="false" aria-controls="places">
+            <span class="placebox__lead">
+              <span class="placebox__title">出发地（地点）</span>
+              <span class="placebox__sub" id="placebox-sub">—</span>
+            </span>
+            <i class="placebox__caret" aria-hidden="true">▾</i>
+          </button>
+          <div class="placebox__body" id="places" hidden></div>
+        </section>
+
         <div class="toolbar">
-          <input class="input" type="search" id="editor-search" placeholder="搜食堂 / 档口…" aria-label="搜索">
+          <input class="input" type="search" id="editor-search" placeholder="搜食堂 / 档口 / 地点…" aria-label="搜索">
           <button class="btn btn--primary btn--sm" type="button" data-act="add-canteen">＋ 新食堂</button>
         </div>
         <div class="toolbar toolbar--sub">
@@ -287,8 +308,8 @@
   <div class="modal__scrim" data-act="close-bulk"></div>
   <div class="modal__box">
     <h2 id="bulk-title">批量粘贴</h2>
-    <p class="mini">每行一个食堂名；以 <code>-</code>、<code>*</code>、<code>·</code> 或数字开头的是档口。也支持 <code>食堂 &gt; 档口</code> 的写法。</p>
-    <textarea id="bulk-text" rows="12" spellcheck="false" placeholder="中心食堂&#10;- 麻辣香锅&#10;- 三楼民族餐厅&#10;第五食堂&#10;- 烤盘饭"></textarea>
+    <p class="mini">每行一个食堂名；以 <code>-</code>、<code>*</code>、<code>·</code> 或数字开头的是档口。也支持 <code>食堂 &gt; 档口</code> 的写法；行尾加 <code>@教学馆、综一</code> 就能顺手标上「离哪近」（名字要对得上控制台里已有的地点）。</p>
+    <textarea id="bulk-text" rows="12" spellcheck="false" placeholder="中心食堂 @本科宿舍、直角楼&#10;- 麻辣香锅&#10;- 三楼民族餐厅&#10;第五食堂&#10;- 烤盘饭"></textarea>
     <div class="toolbar toolbar--end">
       <label class="switch switch--tight">
         <input type="checkbox" id="bulk-replace">
@@ -313,8 +334,9 @@
     </p>
     <ul class="gate__list">
       <li><span>1</span>清单、主题色都只存在这台设备的浏览器里</li>
-      <li><span>2</span>想换设备？生成一条链接或导出一个文件就行</li>
-      <li><span>3</span>不喜欢默认数据，随时一键清空重来</li>
+      <li><span>2</span>先选「从哪出发」，就只抽离那儿近的食堂</li>
+      <li><span>3</span>想换设备？生成一条链接或导出一个文件就行</li>
+      <li><span>4</span>不喜欢默认数据，随时一键清空重来</li>
     </ul>
     <div class="gate__actions">
       <button class="btn btn--primary btn--lg" type="button" data-act="gate-skip">

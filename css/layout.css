@@ -217,6 +217,110 @@ html[data-fx="off"] .orbit__node { animation: none !important; }
 }
 .core__hint { font-size: 11px; color: var(--ink-3); }
 
+/* ---- 出发地（一条虚线串起一串「站台」，别做成规规矩矩的表格） ---- */
+.origin {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  justify-items: center;
+  z-index: 3;
+}
+.origin__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.origin__kicker {
+  font-size: 10px;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: var(--brand-lift);
+  font-weight: 700;
+}
+.origin__rail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 7px 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.origin__rail::-webkit-scrollbar { display: none; }
+.origin__rail::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  border-top: 1px dashed var(--line-2);
+  pointer-events: none;
+}
+.origin__rail:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+
+.origin__chip {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  white-space: nowrap;
+  box-shadow: var(--shadow-1);
+  transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+              translate var(--t-fast) var(--ease-pop), rotate var(--t-mid) var(--ease-pop),
+              box-shadow var(--t-mid) var(--ease), background-color var(--t-mid) var(--ease);
+}
+.origin__chip:nth-child(odd) { rotate: -.7deg; }
+.origin__chip:nth-child(even) { rotate: .75deg; }
+.origin__chip:hover { color: var(--ink); border-color: var(--brand-line); translate: 0 -2px; }
+.origin__chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.origin__chip.is-on {
+  color: var(--brand-ink);
+  border-color: transparent;
+  background: linear-gradient(112deg, var(--brand-lift), var(--brand));
+  box-shadow: var(--shadow-brand);
+  rotate: 0deg;
+  translate: 0 -1px;
+}
+.origin__ico { font-size: 13px; line-height: 1; font-style: normal; }
+.origin__name { max-width: 22vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.origin__n {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+}
+.origin__chip.is-on .origin__n {
+  background: hsl(0 0% 100% / .24);
+  border-color: transparent;
+  color: var(--brand-ink);
+}
+.origin__chip.is-blank { border-style: dashed; }
+.origin__chip.is-blank .origin__name { opacity: .6; }
+body[data-drawing="true"] .origin { opacity: .3; pointer-events: none; }
+
 /* ---- 抽取方式（有机形按钮，非线性阵列） ---- */
 .modes {
   display: flex;
@@ -369,6 +473,33 @@ body[data-drawing="true"] .stage__tip { opacity: .3; pointer-events: none; }
 .result__luck b {
   font-family: var(--font-mono);
   font-size: 15px;
+  color: var(--brand-lift);
+}
+.result__origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  padding: 5px 13px;
+  border-radius: var(--r-pill);
+  background: var(--brand-softer);
+  border: 1px dashed var(--brand-line);
+}
+.result__origin b { color: var(--brand-lift); font-weight: 700; }
+.pick__near {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
   color: var(--brand-lift);
 }
 .result__actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -536,4 +667,9 @@ body[data-drawing="true"] .stage__tip { opacity: .3; pointer-events: none; }
   .modes { width: 100%; }
   .draw { width: 100%; }
   .stage__tip { font-size: 10.5px; }
+  /* 出发地靠横向滚动，别把名字截断 */
+  .origin { justify-items: stretch; }
+  .origin__head { justify-content: flex-start; }
+  .origin__name { max-width: none; }
+  .stage__inner { gap: clamp(10px, 1.6vh, 18px); }
 }

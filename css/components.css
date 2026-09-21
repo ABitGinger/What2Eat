@@ -477,6 +477,100 @@ html[data-appearance="light"] .panel__sheet { background: var(--panel-ink); }
 .stall-add { display: flex; gap: 6px; }
 .stall-add .input { border-radius: var(--r-pill); }
 
+/* ---------------------------------------------------------------- 地点 */
+/* 折叠块：地方不大，但名字得能改、映射得能勾 */
+.placebox {
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg) var(--r-md) var(--r-lg) var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color var(--t-fast);
+}
+.placebox.is-open { border-color: var(--brand-line); box-shadow: var(--shadow-1); }
+.placebox__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  text-align: left;
+}
+.placebox__lead { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.placebox__title { font-size: 13.5px; font-weight: 800; }
+.placebox__sub { font-size: 11px; color: var(--ink-3); }
+.placebox__caret {
+  font-style: normal;
+  color: var(--ink-3);
+  transition: rotate var(--t-mid) var(--ease-pop), color var(--t-fast);
+}
+.placebox__head:hover .placebox__caret { color: var(--brand-lift); }
+.placebox.is-open .placebox__caret { rotate: 180deg; }
+.placebox__body {
+  display: grid;
+  gap: 8px;
+  padding: 4px 14px 16px;
+  border-top: 1px dashed var(--line);
+}
+.placebox__body[hidden] { display: none; }
+
+.place {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md) var(--r-sm) var(--r-md) var(--r-sm);
+  background: var(--panel);
+  transition: border-color var(--t-fast), translate var(--t-fast) var(--ease-pop);
+}
+.place + .place { margin-top: -2px; }
+.place:nth-child(even) { border-radius: var(--r-sm) var(--r-md) var(--r-sm) var(--r-md); }
+.place:hover { border-color: var(--brand-line); translate: 3px 0; }
+.place.is-hit { border-color: var(--brand); }
+.place__main { display: flex; align-items: center; gap: 6px; }
+.place .place__emoji { width: 44px; padding-inline: 0; text-align: center; flex: none; }
+.place__name { flex: 1; min-width: 0; font-weight: 700; }
+.place__count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+}
+.place__count.is-zero {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 42%, transparent);
+}
+.place__area { font-size: 11.5px; }
+.place .input { padding: 6px 11px; font-size: 12.5px; }
+.place-add { display: flex; gap: 6px; margin-top: 4px; }
+
+/* 食堂卡片里的「离哪近」多选 */
+.nearpick { display: flex; flex-wrap: wrap; gap: 5px; }
+.near {
+  padding: 4px 11px;
+  border-radius: var(--r-pill);
+  border: 1px dashed var(--line-2);
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  transition: color var(--t-fast), border-color var(--t-fast), background-color var(--t-fast),
+              box-shadow var(--t-fast);
+}
+.near:hover { color: var(--ink); border-color: var(--brand-line); }
+.near.is-on {
+  border-style: solid;
+  border-color: transparent;
+  background: var(--brand-soft);
+  color: var(--brand-lift);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px var(--brand-line);
+}
+
 .empty {
   padding: 26px 18px;
   text-align: center;
@@ -542,6 +636,11 @@ html[data-appearance="light"] .panel__sheet { background: var(--panel-ink); }
 }
 .node__meta { font-size: 10px; color: var(--ink-3); }
 .node.is-off { opacity: .4; filter: grayscale(.7); }
+/* 选了出发地之后，射程外的星球暗下去 */
+.node.is-far { opacity: .3; filter: grayscale(.6); }
+.node.is-far:hover,
+.node.is-far:focus-visible,
+.node.is-far.is-open { opacity: 1; filter: none; }
 .node__burst {
   position: absolute;
   left: 50%;
@@ -727,4 +826,5 @@ html[data-appearance="light"] .gate__box { background: var(--panel-ink); }
   .bar__nav { gap: 6px; }
   .galaxy { padding-inline: 10px; }
   .node__burst { max-width: 78vw; }
+  .place__emoji { width: 38px; }
 }

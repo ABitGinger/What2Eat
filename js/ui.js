@@ -15,8 +15,11 @@
   var dom = {};
   var ui = {
     mode: 'where',
+    origin: null,        // 出发地：地点 id，null = 任意
+    originDirty: false,  // true 表示「这次是界面改的」，需要把 ui.origin 写回 state
     result: null,
     openIds: {},
+    placesOpen: false,
     editorQuery: '',
     rosterQuery: '',
     busy: false
@@ -37,6 +40,11 @@
       root: document.documentElement,
       barSub: $('#bar-sub'),
       orbit: $('#orbit'),
+      originRail: $('#origin-rail'),
+      originHint: $('#origin-hint'),
+      placebox: $('#placebox'),
+      placeboxSub: $('#placebox-sub'),
+      places: $('#places'),
       core: $('#core'),
       coreFace: $('#core-face'),
       coreVerdict: $('#core-verdict'),
@@ -145,8 +153,101 @@
     var s = S.stats();
     var bits = [s.enabledCanteens + ' 个食堂', s.enabledStalls + ' 个档口'];
     if (st.meta.source) bits.unshift(st.meta.source);
+    if (ui.origin) {
+      bits.push('从 ' + D.originName(ui.origin) + ' 出发（' + (D.nearCounts()[ui.origin] || 0) + ' 家）');
+    }
     if (st.stats.draws) bits.push('已抽 ' + st.stats.draws + ' 次');
     dom.barSub.textContent = bits.join(' · ');
+  }
+
+  /* ================================================================
+     出发地（从哪出发？）
+     ================================================================ */
+  function originChip(id, emoji, name, count, on, blank) {
+    var tip = id ? (name + ' · 附近 ' + count + ' 个食堂') : ('任意 · 整份清单 ' + count + ' 个食堂');
+    return '<button type="button" class="origin__chip' + (on ? ' is-on' : '') + (blank ? ' is-blank' : '') + '"' +
+      ' role="radio" aria-checked="' + (on ? 'true' : 'false') + '" tabindex="' + (on ? '0' : '-1') + '"' +
+      ' data-act="set-origin" data-pid="' + U.escapeAttr(id || '') + '"' +
+      ' title="' + U.escapeAttr(tip) + '" aria-label="' + U.escapeAttr(tip) + '">' +
+      '<i class="origin__ico" aria-hidden="true">' + esc(emoji) + '</i>' +
+      '<span class="origin__name">' + esc(name) + '</span>' +
+      '<span class="origin__n">' + count + '</span>' +
+      '</button>';
+  }
+
+  function renderOrigin(ensureVisible) {
+    if (!dom.originRail) return;
+    var st = S.get();
+    if (!st) return;
+
+    // 平时以 state 为准（导入 / 载入示例 / 刷新后都能还原）；
+    // 只有界面主动改过（originDirty）时才把 ui.origin 写回去。
+    if (ui.originDirty) {
+      if (st.origin !== ui.origin) {
+        S.mutate(function (s) { s.origin = ui.origin; }, { noEmit: true });
+        S.saveSoon();
+      }
+      ui.originDirty = false;
+    } else {
+      ui.origin = (st.origin && S.findPlace(st.origin)) ? st.origin : null;
+    }
+
+    var counts = D.nearCounts();
+    var total = st.canteens.filter(function (c) {
+      return c.enabled && D.enabledStalls(c).length > 0;
+    }).length;
+
+    var html = originChip('', '🎲', '任意', total, !ui.origin, false);
+    st.places.forEach(function (p) {
+      var n = counts[p.id] || 0;
+      html += originChip(p.id, p.emoji, p.name, n, ui.origin === p.id, n === 0);
+    });
+    dom.originRail.innerHTML = html;
+
+    var hint = '不选就是整份清单一起抽';
+    if (ui.origin) {
+      var n2 = counts[ui.origin] || 0;
+      hint = n2
+        ? '只在离「' + D.originName(ui.origin) + '」近的 ' + n2 + ' 家里抽'
+        : '「' + D.originName(ui.origin) + '」附近还没标食堂，会退化成整份清单';
+    } else if (!st.places.length) {
+      hint = '还没有地点，去控制台「食堂与档口」加几个';
+    }
+    if (dom.originHint) dom.originHint.textContent = hint;
+
+    if (ensureVisible) {
+      var on = dom.originRail.querySelector('.is-on');
+      if (on && on.scrollIntoView) {
+        try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) { /* 忽略 */ }
+      }
+    }
+  }
+
+  function setOrigin(pid) {
+    var st = S.get();
+    if (!st) return;
+    var next = (pid && S.findPlace(pid)) ? pid : null;
+    if (next === ui.origin) return;
+    ui.origin = next;
+    ui.originDirty = true;
+    renderOrigin(true);
+    renderBar();
+    FX.sound.click();
+  }
+
+  /** 键盘 ←/→ 在出发地之间挪 */
+  function moveOrigin(step) {
+    var st = S.get();
+    if (!st) return;
+    var ids = [''].concat(st.places.map(function (p) { return p.id; }));
+    var i = ids.indexOf(ui.origin || '');
+    if (i < 0) i = 0;
+    var j = (i + step + ids.length * 2) % ids.length;
+    setOrigin(ids[j]);
+    if (dom.originRail) {
+      var on = dom.originRail.querySelector('.is-on');
+      if (on) on.focus({ preventScroll: true });
+    }
   }
 
   function renderOrbit() {
@@ -200,6 +301,8 @@
   }
 
   function refreshLightweight() {
+    renderOrigin(false);   // 先定下 ui.origin，顶栏那行「从 X 出发」才画得对；
+                           // 出发地上的计数也随食堂的启用状态/「离哪近」一起刷新
     renderBar();
     renderOrbit();
   }
@@ -290,13 +393,16 @@
   /* ================================================================
      结果
      ================================================================ */
-  function pickCard(pick, index) {
+  function pickCard(pick, index, result) {
     var c = pick.canteen, st = pick.stall;
     var isPrimary = pick.role === 'primary';
     var name = st ? st.name : (c ? c.name : '抽不出来');
     var tags = (st ? st.tags : (c ? c.tags : [])) || [];
     var note = st ? st.note : (c ? c.note : '');
     var price = st && st.price ? st.price : '';
+
+    var org = (result && result.origin) ? result.origin : null;
+    var nearHit = !!(org && c && D.isNear(c, org));
 
     var meta = [];
     if (st && c) meta.push(['🏛', c.name]);
@@ -306,6 +412,10 @@
 
     var html = '';
     html += '<span class="pick__badge">' + (isPrimary ? '主选' : '次选') + '</span>';
+    if (org) {
+      html += '<span class="pick__near">🧭 ' +
+        (nearHit ? '离' + esc(D.originName(org)) + '近' : '离' + esc(D.originName(org)) + '稍远') + '</span>';
+    }
     html += '<h3 class="pick__name">' + esc(name) + '</h3>';
     html += '<p class="pick__meta">' + meta.map(function (m) {
       return '<span>' + m[0] + ' ' + esc(m[1]) + '</span>';
@@ -359,6 +469,13 @@
     head += '<div>';
     head += '<p class="result__eyebrow">' + eyebrow + '</p>';
     head += '<h2 class="result__title">' + title + '</h2>';
+    if (result.origin) {
+      var n = D.nearCounts()[result.origin] || 0;
+      head += '<p class="result__origin">🧭 从 <b>' + esc(D.originName(result.origin)) + '</b> 出发 · 附近 ' +
+        n + ' 家食堂</p>';
+    } else {
+      head += '<p class="result__origin">🎲 任意出发 · 整份清单一起抽</p>';
+    }
     head += '</div>';
     head += '<div class="result__luck">手气值 <b>' + (result.luck || 0) + '</b> · ' + esc(result.label ? result.label.label : '') + '</div>';
     head += '</div>';
@@ -373,7 +490,7 @@
     actions += '<button class="btn btn--ghost btn--sm" type="button" data-act="open-roster">🌌 清单星系</button>';
     actions += '</div>';
 
-    var picks = result.picks.map(pickCard);
+    var picks = result.picks.map(function (p, i) { return pickCard(p, i, result); });
     var cards = picks.length > 1
       ? '<div class="picks">' + picks[0] + picks[1] + '</div>'
       : '<div class="picks">' + picks[0] + '</div>';
@@ -425,7 +542,7 @@
       return;
     }
 
-    var result = D.run(mode);
+    var result = D.run(mode, ui.origin);
     S.mutate(function (st) {
       st.stats.draws += 1;
       st.stats.modes[mode] = (st.stats.modes[mode] || 0) + 1;
@@ -444,7 +561,7 @@
     var canteens = ui.result.picks.map(function (p) { return p.canteen; }).filter(Boolean);
     if (!canteens.length) return;
 
-    var result = D.runStallsFor(canteens);
+    var result = D.runStallsFor(canteens, { origin: ui.result.origin });
     result.mode = 'where-stalls';
     // 保留原食堂顺序
     S.mutate(function (st) { st.last = D.serialize(result); }, { noEmit: true });
@@ -486,6 +603,7 @@
     var r = ui.result;
     if (!r) return;
     var lines = ['🎲 今天吃什么 · 命运抽取结果', ''];
+    if (r.origin) lines.push('从「' + D.originName(r.origin) + '」出发', '');
     r.picks.forEach(function (p) {
       var who = p.role === 'primary' ? '主选' : '次选';
       if (p.stall) lines.push(who + '：' + p.stall.name + (p.canteen ? '（' + p.canteen.name + '）' : ''));
@@ -511,6 +629,7 @@
     if (st.stats.draws >= 50) list.push('fifty');
     if (st.stats.modes.where > 0 && st.stats.modes.what > 0) list.push('both');
     if ((result.luck || 0) >= 95) list.push('queen');
+    if (result.origin || ui.origin) list.push('nearby');
 
     var unlocked = [];
     list.forEach(function (id) {
@@ -609,22 +728,82 @@
       .filter(function (t, i, arr) { return t && arr.indexOf(t) === i; }).slice(0, 4);
   }
 
+  function canteenSub(c) {
+    var near = (c.near || []).length;
+    return (c.area || '未填写位置') + ' · ' + c.stalls.length + ' 个档口 · 权重 ' + c.weight +
+      (near ? ' · 近 ' + near + ' 处' : ' · 未标地点');
+  }
+
   function canteenMatches(c, q) {
     if (!q) return true;
     if (c.name.toLowerCase().indexOf(q) >= 0) return true;
     if ((c.area || '').toLowerCase().indexOf(q) >= 0) return true;
+    if ((c.near || []).some(function (pid) {
+      var p = S.findPlace(pid);
+      return !!p && p.name.toLowerCase().indexOf(q) >= 0;
+    })) return true;
     return c.stalls.some(function (s) { return s.name.toLowerCase().indexOf(q) >= 0; });
+  }
+
+  /* ---------------------------------------------------------------- 地点 */
+  function renderPlaces(st) {
+    if (!dom.places) return;
+    st = st || S.get();
+    if (!st) return;
+
+    var counts = {};
+    st.canteens.forEach(function (c) {
+      (c.near || []).forEach(function (pid) { counts[pid] = (counts[pid] || 0) + 1; });
+    });
+
+    if (dom.placebox) dom.placebox.classList.toggle('is-open', !!ui.placesOpen);
+    var head = dom.placebox ? dom.placebox.querySelector('.placebox__head') : null;
+    if (head) head.setAttribute('aria-expanded', ui.placesOpen ? 'true' : 'false');
+    dom.places.hidden = !ui.placesOpen;
+
+    if (dom.placeboxSub) {
+      dom.placeboxSub.textContent = st.places.length
+        ? st.places.length + ' 个地点 · 选了出发地就只抽「离它近」的食堂'
+        : '还没有地点，加几个比如「教学馆」「宿舍区」';
+    }
+
+    if (!ui.placesOpen) { dom.places.innerHTML = ''; return; }
+
+    var html = st.places.map(function (p, i) {
+      var n = counts[p.id] || 0;
+      return '<div class="place" data-pid="' + p.id + '">' +
+        '<div class="place__main">' +
+        '<input class="input place__emoji" data-pfield="emoji" data-pid="' + p.id + '" value="' + U.escapeAttr(p.emoji) + '" aria-label="图标" maxlength="4">' +
+        '<input class="input place__name" data-pfield="name" data-pid="' + p.id + '" value="' + U.escapeAttr(p.name) + '" aria-label="地点名称">' +
+        '<span class="place__count' + (n ? '' : ' is-zero') + '" title="有 ' + n + ' 个食堂标了离这儿近">' + n + ' 个</span>' +
+        '<button type="button" class="tiny-btn" data-act="place-up" data-pid="' + p.id + '" title="上移">↑</button>' +
+        '<button type="button" class="tiny-btn" data-act="place-down" data-pid="' + p.id + '" title="下移">↓</button>' +
+        '<button type="button" class="tiny-btn is-danger" data-act="place-del" data-pid="' + p.id + '" title="删除地点">✕</button>' +
+        '</div>' +
+        '<input class="input place__area" style="width:100%" data-pfield="area" data-pid="' + p.id + '" value="' +
+        U.escapeAttr(p.area) + '" placeholder="在哪儿 / 备注（可留空）" aria-label="地点备注">' +
+        '</div>';
+    }).join('');
+
+    html += '<form class="place-add" id="place-add">' +
+      '<input class="input input--sm" style="width:100%" name="placeName" placeholder="加一个地点，比如「图书馆」，回车确认…" autocomplete="off">' +
+      '<button class="btn btn--primary btn--sm" type="submit">加</button></form>';
+
+    dom.places.innerHTML = html;
   }
 
   function renderEditor() {
     var st = S.get();
     if (!st || !dom.editor) return;
+    renderPlaces(st);
+
     var q = ui.editorQuery.trim().toLowerCase();
     var list = st.canteens.filter(function (c) { return canteenMatches(c, q); });
 
     var s = S.stats();
     dom.editorStat.textContent = '共 ' + s.canteens + ' 个食堂 / ' + s.stalls + ' 个档口；' +
-      '当前启用 ' + s.enabledCanteens + ' 个食堂、' + s.enabledStalls + ' 个档口。' +
+      '当前启用 ' + s.enabledCanteens + ' 个食堂、' + s.enabledStalls + ' 个档口；' +
+      s.places + ' 个地点，其中 ' + s.tagged + ' 个食堂标了「离哪近」。' +
       (q ? '（筛选中，显示 ' + list.length + ' 个）' : '');
 
     if (!list.length) {
@@ -633,10 +812,11 @@
       return;
     }
 
-    dom.editor.innerHTML = list.map(function (c, i) { return canteenCard(c, i, q); }).join('');
+    dom.editor.innerHTML = list.map(function (c, i) { return canteenCard(c, i, q, st); }).join('');
   }
 
-  function canteenCard(c, index, q) {
+  function canteenCard(c, index, q, st) {
+    st = st || S.get() || { places: [] };
     var open = !!ui.openIds[c.id];
     var stallCount = c.stalls.length;
     var shownStalls = q
@@ -656,6 +836,22 @@
 
       body += '<label class="row"><span class="row__label">位置 / 说明（显示在结果里）</span>' +
         '<input class="input input--sm" style="width:100%" data-field="area" data-cid="' + c.id + '" value="' + U.escapeAttr(c.area) + '"></label>';
+
+      // 「离哪近」：选了出发地之后，只会在勾过这里的食堂里抽
+      body += '<div class="row"><span class="row__label">离哪近（出发地，可多选）</span><div class="nearpick">';
+      if (!st.places || !st.places.length) {
+        body += '<span class="mini">还没有地点 —— 先在上面「出发地（地点）」里加两个。</span>';
+      } else {
+        var nearIds = c.near || [];
+        st.places.forEach(function (p) {
+          var on = nearIds.indexOf(p.id) >= 0;
+          body += '<button type="button" class="near' + (on ? ' is-on' : '') + '" data-act="toggle-near"' +
+            ' data-cid="' + c.id + '" data-pid="' + p.id + '" aria-pressed="' + (on ? 'true' : 'false') + '"' +
+            ' title="' + U.escapeAttr(p.name + (p.area ? ' · ' + p.area : '')) + '">' +
+            esc(p.emoji) + ' ' + esc(p.name) + '</button>';
+        });
+      }
+      body += '</div></div>';
 
       body += '<label class="row"><span class="row__label">标签（逗号分隔，最多 4 个）</span>' +
         '<input class="input input--sm" style="width:100%" data-field="tags" data-cid="' + c.id + '" value="' + U.escapeAttr((c.tags || []).join(', ')) + '"></label>';
@@ -697,7 +893,7 @@
       '<span class="canteen__emoji">' + esc(c.emoji || '🍽️') + '</span>' +
       '<span class="canteen__names">' +
       '<span class="canteen__name">' + esc(c.name) + '</span>' +
-      '<span class="canteen__sub">' + esc(c.area || '未填写位置') + ' · ' + stallCount + ' 个档口 · 权重 ' + c.weight + '</span>' +
+      '<span class="canteen__sub">' + esc(canteenSub(c)) + '</span>' +
       '</span></button>' +
       '<div class="canteen__tools">' +
       '<button type="button" class="tiny-btn" data-act="canteen-toggle-enabled" data-cid="' + c.id + '" title="' + (c.enabled ? '停用' : '启用') + '">' + (c.enabled ? '✓' : '○') + '</button>' +
@@ -722,6 +918,19 @@
       h = Math.imul(h, 16777619);
     }
     return ((h >>> 0) % 100003) / 100003;
+  }
+
+  /** 选了出发地之后，不在「附近」的星球会暗下去，一眼看出哪些在射程内 */
+  function farFromOrigin(c) {
+    return !!(ui.origin && c.enabled && !D.isNear(c, ui.origin));
+  }
+
+  function nearTitle(c) {
+    var names = (c.near || []).map(function (id) {
+      var p = S.findPlace(id);
+      return p ? p.name : null;
+    }).filter(Boolean);
+    return names.length ? '\n离这儿近：' + names.join('、') : '\n（还没标「离哪近」）';
   }
 
   function renderGalaxy() {
@@ -862,20 +1071,23 @@
 
       var node = U.el('button', {
         type: 'button',
-        class: 'node' + (c.enabled ? '' : ' is-off'),
+        class: 'node' + (c.enabled ? '' : ' is-off') + (farFromOrigin(c) ? ' is-far' : ''),
         'data-act': 'galaxy-node',
         'data-id': c.id,
         style: 'left:' + (x - size / 2).toFixed(1) + 'px;top:' + (y - size / 2).toFixed(1) + 'px;' +
                'width:' + size + 'px;height:' + size + 'px;' +
                'rotate:' + ((hash01(c.id, 21) - 0.5) * 12).toFixed(1) + 'deg;' +
                '--delay:' + (hash01(c.id, 33) * 4).toFixed(2) + 's;',
-        title: c.name
+        title: c.name + (c.area ? ' · ' + c.area : '') + nearTitle(c)
       });
 
       if (c.enabled) node.style.animationPlayState = 'running';
       node.appendChild(U.el('span', { class: 'node__emoji', text: c.emoji || '🍽️' }));
       node.appendChild(U.el('span', { class: 'node__name', text: c.name }));
-      node.appendChild(U.el('span', { class: 'node__meta', text: D.enabledStalls(c).length + ' 档口' }));
+      node.appendChild(U.el('span', {
+        class: 'node__meta',
+        text: D.enabledStalls(c).length + ' 档口' + ((c.near || []).length ? ' · 近 ' + (c.near || []).length + ' 处' : '')
+      }));
 
       if (c.stalls.length) {
         var burst = U.el('div', { class: 'node__burst' });
@@ -968,7 +1180,7 @@
         clearResult();
       }
       if (!silent) {
-        var msg = '导入成功：' + res.state.canteens.length + ' 个食堂。';
+        var msg = '导入成功：' + res.state.canteens.length + ' 个食堂、' + res.state.places.length + ' 个地点。';
         if (res.warnings.length) msg += ' 提示：' + res.warnings.join('；');
         toast(msg, 'ok', 4200);
       }
@@ -982,14 +1194,56 @@
   /* ================================================================
      批量粘贴解析
      ================================================================ */
+  /**
+   * 支持三种写法：
+   *   食堂名
+   *   - 档口名
+   *   食堂 > 档口
+   * 行尾可以加 `@教学馆、综一` 标上「离哪近」（名字要对得上已有的地点）。
+   * @returns {{list: Array, unknown: string[]}} unknown 是没认出来的地点名
+   */
   function parseBulk(text) {
+    var st = S.get();
+    var placeByName = {};
+    ((st && st.places) || []).forEach(function (p) { placeByName[p.name] = p; });
+
     var lines = String(text || '').split(/\r?\n/);
     var out = [];
     var current = null;
+    var unknown = [];
+
+    function newCanteen(name) {
+      return { name: name, area: '', emoji: '🍽️', tags: [], note: '', weight: 1, enabled: true, near: [], stalls: [] };
+    }
+
+    /** 把行尾的 `@地点、地点` 摘出来，返回去掉它之后的行和地点 id */
+    function splitNear(line) {
+      var m = line.match(/\s*@\s*(.+)$/);
+      if (!m) return { line: line, near: [] };
+      var ids = [];
+      m[1].split(/[,，、|\/]+/).forEach(function (nm) {
+        var t = nm.trim();
+        if (!t) return;
+        var p = placeByName[t];
+        if (!p) { if (unknown.indexOf(t) === -1) unknown.push(t); return; }
+        if (ids.indexOf(p.id) === -1) ids.push(p.id);
+      });
+      return { line: line.slice(0, m.index).trim(), near: ids };
+    }
+
+    function attachNear(near) {
+      if (!near.length) return;
+      if (!current) { current = newCanteen('未命名食堂'); out.push(current); }
+      near.forEach(function (id) { if (current.near.indexOf(id) === -1) current.near.push(id); });
+    }
 
     lines.forEach(function (rawLine) {
       var line = rawLine.trim();
       if (!line || line.charAt(0) === '#') return;
+
+      var split = splitNear(line);
+      line = split.line;
+      if (!line) { attachNear(split.near); return; }
 
       // 「食堂 > 档口」形式
       if (line.indexOf('>') > 0 || line.indexOf('＞') > 0) {
@@ -998,7 +1252,8 @@
         var sname = (parts[1] || '').trim();
         if (!cname) return;
         current = out.filter(function (c) { return c.name === cname; })[0];
-        if (!current) { current = { name: cname, area: '', emoji: '🍽️', tags: [], note: '', weight: 1, enabled: true, stalls: [] }; out.push(current); }
+        if (!current) { current = newCanteen(cname); out.push(current); }
+        attachNear(split.near);
         if (sname) current.stalls.push({ name: sname, tags: [], price: '', note: '', enabled: true });
         return;
       }
@@ -1007,20 +1262,19 @@
       if (isStall) {
         var name = line.replace(/^[-*·•–]\s*|^\d+[.、)]\s*/, '').trim();
         if (!name) return;
-        if (!current) { current = { name: '未命名食堂', area: '', emoji: '🍽️', tags: [], note: '', weight: 1, enabled: true, stalls: [] }; out.push(current); }
+        if (!current) { current = newCanteen('未命名食堂'); out.push(current); }
+        attachNear(split.near);
         current.stalls.push({ name: name, tags: [], price: '', note: '', enabled: true });
         return;
       }
 
       var cname2 = line.replace(/[:：]\s*$/, '').trim();
       current = out.filter(function (c) { return c.name === cname2; })[0];
-      if (!current) {
-        current = { name: cname2, area: '', emoji: '🍽️', tags: [], note: '', weight: 1, enabled: true, stalls: [] };
-        out.push(current);
-      }
+      if (!current) { current = newCanteen(cname2); out.push(current); }
+      attachNear(split.near);
     });
 
-    return out.filter(function (c) { return c.name; });
+    return { list: out.filter(function (c) { return c.name; }), unknown: unknown };
   }
 
   /* ================================================================
@@ -1139,6 +1393,51 @@
       if (target) target.classList.add('is-hit');
     });
 
+    /* ---- 出发地 ---- */
+    dom.originRail.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); moveOrigin(1); return; }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); moveOrigin(-1); return; }
+      if (e.key === 'Home') {
+        e.preventDefault();
+        var st0 = S.get();
+        if (st0) setOrigin('');
+        return;
+      }
+      if (e.key === 'End') {
+        e.preventDefault();
+        var st1 = S.get();
+        if (st1 && st1.places.length) setOrigin(st1.places[st1.places.length - 1].id);
+        return;
+      }
+    });
+
+    /* ---- 地点编辑器 ---- */
+    dom.places.addEventListener('change', function (e) {
+      var input = e.target;
+      if (!input.dataset || !input.dataset.pfield) return;
+      commitField(input);
+    });
+
+    dom.places.addEventListener('submit', function (e) {
+      var form = e.target.closest('.place-add');
+      if (!form) return;
+      e.preventDefault();
+      var input = form.querySelector('input[name="placeName"]');
+      var name = (input.value || '').trim();
+      if (!name) return;
+      var newId = U.uid('p');
+      S.mutate(function (st) {
+        st.places.push({ id: newId, name: name.slice(0, 30), emoji: '📍', area: '' });
+      }, { noEmit: true });
+      S.saveSoon();
+      input.value = '';
+      renderEditor();
+      refreshLightweight();
+      FX.sound.click();
+      var row = dom.places.querySelector('.place[data-pid="' + newId + '"]');
+      if (row) row.classList.add('is-hit');
+    });
+
     /* ---- 清单搜索 ---- */
     dom.rostersearch.addEventListener('input', U.debounce(function () {
       ui.rosterQuery = dom.rostersearch.value;
@@ -1239,9 +1538,29 @@
 
   function commitField(input) {
     var cid = input.dataset.cid;
+    var pid = input.dataset.pid;
     var sid = input.dataset.sid;
     var field = input.dataset.field;
+    var pfield = input.dataset.pfield;
     var value = input.value;
+
+    /* ---- 地点的字段 ---- */
+    if (pfield) {
+      S.mutate(function (st) {
+        var p = st.places.filter(function (x) { return x.id === pid; })[0];
+        if (!p) return;
+        if (pfield === 'emoji') p.emoji = value.trim().slice(0, 4) || '📍';
+        else if (pfield === 'name') p.name = value.trim().slice(0, 30) || p.name;
+        else p[pfield] = value.slice(0, 60);
+      }, { noEmit: true });
+      S.saveSoon();
+      var p2 = S.findPlace(pid);
+      if (p2) input.value = pfield === 'name' ? p2.name : (p2[pfield] || '');
+      renderOrigin(false);
+      renderBar();
+      if (pfield === 'name') renderEditor();
+      return;
+    }
 
     S.mutate(function (st) {
       var c = st.canteens.filter(function (x) { return x.id === cid; })[0];
@@ -1277,7 +1596,7 @@
         if (nameEl) nameEl.textContent = c2.name;
         if (emojiEl) emojiEl.textContent = c2.emoji || '🍽️';
         if (subEl) {
-          subEl.textContent = (c2.area || '未填写位置') + ' · ' + c2.stalls.length + ' 个档口 · 权重 ' + c2.weight;
+          subEl.textContent = canteenSub(c2);
         }
       }
     }
@@ -1307,13 +1626,86 @@
         return;
       }
 
+      /* 出发地 */
+      case 'set-origin': setOrigin(el.dataset.pid || ''); return;
+      case 'toggle-places':
+        ui.placesOpen = !ui.placesOpen;
+        renderPlaces();
+        FX.sound.click();
+        return;
+      case 'add-place': {
+        var newPid = U.uid('p');
+        S.mutate(function (st) {
+          st.places.push({ id: newPid, name: '新地点', emoji: '📍', area: '' });
+        }, { noEmit: true });
+        S.saveSoon();
+        ui.placesOpen = true;
+        renderEditor(); refreshLightweight();
+        var prow = dom.places.querySelector('.place[data-pid="' + newPid + '"]');
+        if (prow) {
+          prow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          var pinp = prow.querySelector('input[data-pfield="name"]');
+          if (pinp) { pinp.focus(); pinp.select(); }
+        }
+        return;
+      }
+      case 'place-del': {
+        var pu = S.placeUsage(el.dataset.pid);
+        var pnameOf = S.findPlace(el.dataset.pid);
+        if (!confirm('删除地点「' + (pnameOf ? pnameOf.name : '') + '」？' +
+          (pu ? '\n有 ' + pu + ' 个食堂标了「离它近」，这些标记会一起清掉。' : ''))) return;
+        S.mutate(function (st) {
+          st.places = st.places.filter(function (p) { return p.id !== el.dataset.pid; });
+          st.canteens.forEach(function (c) {
+            c.near = (c.near || []).filter(function (id) { return id !== el.dataset.pid; });
+          });
+          if (st.origin === el.dataset.pid) st.origin = null;
+        }, { noEmit: true });
+        S.save();
+        renderEditor(); refreshLightweight();
+        toast('地点已删除。', 'ok');
+        return;
+      }
+      case 'place-up':
+      case 'place-down': {
+        var pdir = act === 'place-up' ? -1 : 1;
+        S.mutate(function (st) {
+          var i = -1;
+          st.places.forEach(function (p, idx) { if (p.id === el.dataset.pid) i = idx; });
+          var j = i + pdir;
+          if (i < 0 || j < 0 || j >= st.places.length) return;
+          var tmp = st.places[i];
+          st.places[i] = st.places[j];
+          st.places[j] = tmp;
+        }, { noEmit: true });
+        S.saveSoon();
+        renderEditor(); refreshLightweight();
+        return;
+      }
+      case 'toggle-near': {
+        var nearby = S.findPlace(el.dataset.pid);
+        if (!nearby) return;
+        S.mutate(function (st) {
+          var c = st.canteens.filter(function (x) { return x.id === cid; })[0];
+          if (!c) return;
+          if (!Array.isArray(c.near)) c.near = [];
+          var k = c.near.indexOf(el.dataset.pid);
+          if (k >= 0) c.near.splice(k, 1);
+          else c.near.push(el.dataset.pid);
+        }, { noEmit: true });
+        S.saveSoon();
+        renderEditor(); refreshLightweight();
+        FX.sound.click();
+        return;
+      }
+
       /* 编辑器 */
       case 'add-canteen': {
         var newId = U.uid('c');
         S.mutate(function (st) {
           st.canteens.push({
             id: newId, name: '新食堂', area: '', emoji: '🍽️', tags: [], note: '',
-            weight: 1, enabled: true, stalls: []
+            weight: 1, enabled: true, near: [], stalls: []
           });
         }, { noEmit: true });
         S.saveSoon();
@@ -1421,19 +1813,22 @@
         return;
       case 'apply-bulk': {
         var parsed = parseBulk(dom.bulkText.value);
-        if (!parsed.length) { toast('没解析出任何食堂，检查一下格式。', 'warn'); return; }
+        if (!parsed.list.length) { toast('没解析出任何食堂，检查一下格式。', 'warn'); return; }
         var replace = dom.bulkReplace.checked;
         S.mutate(function (st) {
-          var mapped = parsed.map(function (c, i) {
-            return S.normalize({ canteens: [c] }).state.canteens[0];
+          // 带上 places 一起规范化，否则行尾写的 @地点 会被当成「不存在的地点」丢掉
+          var mapped = parsed.list.map(function (c) {
+            return S.normalize({ places: st.places, canteens: [c] }).state.canteens[0];
           });
           st.canteens = replace ? mapped : st.canteens.concat(mapped);
         }, { noEmit: true });
         S.saveSoon();
         closeBulk();
-        renderEditor(); refreshLightweight(); renderSharePane();
+        renderEditor(); refreshLightweight(); renderSharePane(); renderOrigin(false);
         if (!dom.roster.hidden) renderGalaxy();
-        toast('已导入 ' + parsed.length + ' 个食堂。', 'ok', 3200);
+        var bmsg = '已导入 ' + parsed.list.length + ' 个食堂。';
+        if (parsed.unknown.length) bmsg += ' 这几个地点没对上（先在地点列表里加）：' + parsed.unknown.slice(0, 6).join('、');
+        toast(bmsg, parsed.unknown.length ? 'warn' : 'ok', 4600);
         return;
       }
 
@@ -1462,9 +1857,11 @@
         afterDataReplace('已载入大工示例数据。');
         return;
       case 'clear-all':
-        if (!confirm('清空全部清单和设置？这个操作不可撤销。')) return;
+        if (!confirm('清空全部清单和设置（包括地点）？这个操作不可撤销。')) return;
         S.mutate(function (st) {
           st.canteens = [];
+          st.places = [];
+          st.origin = null;
           st.last = null;
           st.stats.draws = 0;
           st.stats.modes = { where: 0, what: 0 };
@@ -1531,9 +1928,21 @@
     var lines = ['# ' + (st.meta.title || '今天吃什么') + ' · 食堂清单', ''];
     if (st.meta.source) lines.push('> ' + st.meta.source, '');
     lines.push('共 ' + st.canteens.length + ' 个食堂。', '');
+    if (st.places.length) {
+      lines.push('## 地点（出发地）', '');
+      st.places.forEach(function (p) {
+        lines.push('- ' + p.emoji + ' ' + p.name + (p.area ? ' — ' + p.area : ''));
+      });
+      lines.push('');
+    }
     st.canteens.forEach(function (c) {
       lines.push('## ' + (c.emoji || '') + ' ' + c.name + (c.enabled ? '' : '（已停用）'));
       if (c.area) lines.push('*' + c.area + '*');
+      var nearNames = (c.near || []).map(function (id) {
+        var p = S.findPlace(id);
+        return p ? p.name : null;
+      }).filter(Boolean);
+      if (nearNames.length) lines.push('离 ' + nearNames.join('、') + ' 近');
       if (c.tags && c.tags.length) lines.push('`' + c.tags.join('` `') + '`');
       if (c.note) lines.push('> ' + c.note);
       lines.push('');
@@ -1664,6 +2073,10 @@
     applyTheme: applyTheme,
     renderBar: renderBar,
     renderOrbit: renderOrbit,
+    renderOrigin: renderOrigin,
+    renderPlaces: renderPlaces,
+    setOrigin: setOrigin,
+    moveOrigin: moveOrigin,
     renderEditor: renderEditor,
     renderGalaxy: renderGalaxy,
     renderResult: renderResult,
@@ -1675,6 +2088,7 @@
     toast: toast,
     showAchievement: showAchievement,
     performDraw: performDraw,
+    parseBulk: parseBulk,
     state: ui
   };
 })(window);
