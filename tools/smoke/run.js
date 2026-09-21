@@ -30,7 +30,7 @@ const STEPS = [
   'origin', 'origin-what', 'origin-tight', 'origin-narrow',
   'places', 'legacy',
   'editor', 'roster', 'share', 'bulk', 'theme', 'switches',
-  'import', 'badimport', 'empty', 'reset', 'fresh',
+  'import', 'badimport', 'empty', 'reset', 'fresh', 'blank',
   'galaxy', 'galaxy-narrow', 'galaxy-many'
 ];
 
@@ -147,15 +147,35 @@ function runResetPersist(browser, keep) {
   return log;
 }
 
+/* ---- 空白清单验证：先点「我自己填」，再用同一 profile 重开一次 ----
+   空白模板里不该夹带任何地点，重开后必须还是 0 个（防止「老数据升级」之类的逻辑
+   按食堂名字把大工地标又凭空补回来），食堂也只有那条占位。 */
+function runBlankPersist(browser, keep) {
+  const profile = profileDir('blank');
+  const common = [
+    '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+    '--hide-scrollbars', '--window-size=' + SIZE, '--virtual-time-budget=' + BUDGET,
+    '--user-data-dir=' + profile
+  ];
+  const first = extractLog(runOnce(browser, common.concat(['--dump-dom', BASE + '/tools/smoke/drive.html?step=blank&fx=off'])));
+  const second = extractLog(runOnce(browser, common.concat(['--dump-dom', BASE + '/tools/smoke/drive.html?step=reload&fx=off&canteens=1&places=0'])));
+  const log = [first, second].filter(Boolean).join('\n');
+  if (keep && log) {
+    fs.mkdirSync(OUT, { recursive: true });
+    fs.writeFileSync(path.join(OUT, 'blank-persist.log.txt'), log + '\n', 'utf8');
+  }
+  return log;
+}
+
 /* ---- 主流程 ---- */
 const argv = process.argv.slice(2);
 const keep = argv.includes('--keep');
-const targets = argv.includes('--all') ? STEPS.concat(['persist', 'reset-persist'])
+const targets = argv.includes('--all') ? STEPS.concat(['persist', 'reset-persist', 'blank-persist'])
   : argv.filter((a) => a.charAt(0) !== '-');
 
 if (!targets.length) {
   console.log('用法： node tools/smoke/run.js <step...>|--all [--keep]');
-  console.log('可用： ' + STEPS.concat(['persist', 'reset-persist']).join(', '));
+  console.log('可用： ' + STEPS.concat(['persist', 'reset-persist', 'blank-persist']).join(', '));
   process.exit(2);
 }
 
@@ -171,8 +191,10 @@ let failed = 0;
 for (const step of targets) {
   const log = step === 'persist' ? runPersist(browser, keep)
     : step === 'reset-persist' ? runResetPersist(browser, keep)
+    : step === 'blank-persist' ? runBlankPersist(browser, keep)
     : runStep(browser, step, keep);
-  const ok = log && !/EXCEPTION/.test(log) && !/err=(?!-)/.test(log) && !/VERDICT=(?!OK)/.test(log);
+  const ok = log && !/EXCEPTION/.test(log) && !/err=(?!-)/.test(log) && !/VERDICT=(?!OK)/.test(log)
+    && /END:/.test(log);   // 没有收尾哨兵 = 驱动器被动画卡住了，别当成通过
   if (!ok) failed++;
   console.log('───── ' + step + ' : ' + (ok ? 'OK' : 'FAIL') + ' ─────');
   console.log(log || '(没有拿到断言输出)');

@@ -44,7 +44,9 @@
     scroll=1  每一步顺带滚到目标附近（截图用）
     fx=off    关掉背景动效，让 headless 的虚拟时间预算不被 rAF 吃光
     nolog=1   跑完把调试浮层藏掉（只截图时用，--dump-dom 抓断言时不要加）
-    expect=<id> 仅 reload 步骤用：断言上次退出时存的出发地就是它
+    expect=<id>   仅 reload 步骤用：断言上次退出时存的出发地就是它
+    canteens=<n> / places=<n>  仅 reload 步骤用：精确断言条数（走空白清单路线时用；
+                  不给就按内置默认数据当「至少得有这么多」）
 -->
 <iframe id="fr" src="../../index.html"></iframe>
 <script>
@@ -88,17 +90,21 @@
       w.scrollTo(0, Math.max(0, (q(sel) ? q(sel).getBoundingClientRect().top + w.scrollY - 8 : 0)));
       await sleep(300);
     }
+    // 关掉背景动效：无限 rAF 循环会吃掉 headless 的虚拟时间预算，
+    // 导致页面里的动画 await 永不返回（脚本会静悄悄停在半路）
+    async function fxOff() {
+      if (Q.get('fx') !== 'off') return;
+      WTE.store.mutate(function (st) { st.theme.fx = 'off'; });
+      WTE.ui.applyTheme();
+    }
+
     async function skipGate() {
       q('#gate [data-act="gate-skip"]').click();
       await sleep(120);
       log('bar=' + q('#bar-sub').textContent);
       log('stats=' + JSON.stringify(WTE.store.stats()));
       log('orbitNodes=' + qa('.orbit__node').length);
-      if (Q.get('fx') === 'off') {
-        // 关掉背景动效，避免无限 rAF 循环吃掉 headless 的虚拟时间预算
-        WTE.store.mutate(function (st) { st.theme.fx = 'off'; });
-        WTE.ui.applyTheme();
-      }
+      await fxOff();
     }
 
     /* 量化“挤不挤”：
@@ -154,13 +160,19 @@
           log('reload: railOn=' + (qa('#origin-rail .is-on').map(function (c) {
             return c.getAttribute('data-pid') || '(any)';
           }).join(',') || '-'));
-          // 基线不写死：拿内置默认数据当「至少得有这么多」，示例数据改了也不会破测试
+          // 基线不写死：拿内置默认数据当「至少得有这么多」，示例数据改了也不会破测试；
+          // 但走空白清单路线时用 ?canteens=1&places=0 精确断言（见 blank-persist）
           var DEF = w.WTE_DEFAULT_DATA || {};
           var minC = (DEF.canteens || []).length;
           var minP = (DEF.places || []).length;
-          log('reload: expectAtLeast canteens>=' + minC + ' places>=' + minP);
-          log('persist VERDICT=' + ((rst.canteens.length >= minC &&
-              rst.places.length >= minP &&
+          var expC = Q.get('canteens') === null ? null : Number(Q.get('canteens'));
+          var expP = Q.get('places') === null ? null : Number(Q.get('places'));
+          log('reload: expect ' + (expC === null
+            ? 'canteens>=' + minC + ' places>=' + minP
+            : 'canteens=' + expC + ' places=' + expP));
+          log('persist VERDICT=' + ((
+              (expC === null ? rst.canteens.length >= minC : rst.canteens.length === expC) &&
+              (expP === null ? rst.places.length >= minP : rst.places.length === expP) &&
               (!expOrigin || rst.origin === expOrigin)) ? 'OK' : 'MISS'));
           return;
         }
@@ -176,6 +188,54 @@
           }).join(','));
           log('fresh VERDICT=' + ((!q('#gate').hidden && !WTE.store.hasStored() && !WTE.store.seen())
             ? 'OK' : 'MISS'));
+          return;
+        }
+
+        if (step === 'blank') {
+          // 「我自己填」这条路：空白模板不该夹带任何上一个身份的地标
+          var tpl = w.WTE_BLANK_DATA || {};
+          var tplPlaces = tpl.places || [];
+          log('blank: templatePlaces=' + tplPlaces.length +
+              ' [' + tplPlaces.map(function (p) { return p.name; }).join('、') + ']');
+
+          q('#gate [data-act="gate-custom"]').click();
+          await sleep(430);   // gateCustom 会在 260ms 后自动打开控制台并切到「食堂与档口」
+          await fxOff();      // 必须在 gateCustom 之后：它刚用空白模板把主题重置回 full 了
+
+          var bs = WTE.store.get();
+          var chips = qa('#origin-rail .origin__chip');
+          log('blank: gateHidden=' + q('#gate').hidden + ' locked=' + d.body.dataset.locked);
+          log('blank: canteens=' + bs.canteens.length + ' places=' + bs.places.length +
+              ' origin=' + bs.origin + ' nears=' + bs.canteens.filter(function (c) {
+                return (c.near || []).length;
+              }).length);
+          log('blank: railChips=' + chips.length + ' firstPid="' +
+              (chips[0] ? chips[0].getAttribute('data-pid') : '?') + '" hint=' + q('#origin-hint').textContent);
+          log('blank: panelOpen=' + q('#panel-settings').classList.contains('is-open') +
+              ' tab=' + (q('.tab.is-on') ? q('.tab.is-on').dataset.tab : '-'));
+
+          q('[data-act="toggle-places"]').click();
+          await sleep(150);
+          log('blank: placeboxOpen=' + !q('#places').hidden + ' rows=' + qa('.place').length +
+              ' sub=' + q('#placebox-sub').textContent);
+
+          // 空白模板只剩一条占位食堂，它也得能正常抽出来（不该因为没地点就卡住），
+          // 且结果卡上必须是「任意出发」——没有地点就不该出现出发地约束
+          await WTE.ui.performDraw('where');
+          await sleep(320);
+          var oRow = q('#result .result__origin');
+          log('blank: drewCanteen=' + (q('#result').hidden ? '(没抽出来)' :
+              (q('#result .pick__name') ? q('#result .pick__name').textContent.trim() : '?')) +
+              ' originRow=' + (oRow ? oRow.textContent.trim() : 'none'));
+
+          log('blank VERDICT=' + ((q('#gate').hidden === true &&
+              tplPlaces.length === 0 && bs.places.length === 0 &&
+              bs.canteens.length === 1 && bs.origin === null &&
+              chips.length === 1 && chips[0].getAttribute('data-pid') === '' &&
+              qa('.place').length === 0 &&
+              !q('#result').hidden &&
+              !!oRow && /任意出发/.test(oRow.textContent)) ? 'OK' : 'MISS'));
+          await reveal('#origin');
           return;
         }
 
@@ -468,7 +528,7 @@
               !WTE.store.hasStored() && !WTE.store.seen() &&
               w.localStorage.getItem('wte.state.v2') === null &&
               w.localStorage.getItem('wte.seen.v1') === null &&
-              st.canteens.length === 1 && st.origin === null &&
+              st.canteens.length === 1 && st.places.length === 0 && st.origin === null &&
               st.stats.draws === 0 && st.stats.achievements.length === 0 &&
               st.theme.primary === blankPrimary &&
               q('#result').hidden &&
@@ -634,6 +694,10 @@
         log('unknown step: ' + step);
       } catch (e) {
         log('EXCEPTION: ' + (e && e.message) + ' | ' + String((e && e.stack) || '').split('\n')[1]);
+      } finally {
+        // 收尾哨兵：脚本要是被某个永不 resolve 的动画 await 卡住，就走不到这儿。
+        // run.js 把「有没有 END」也当成判定条件，免得半路断掉被当成「没看到 MISS 就是过」。
+        log('END:' + step);
       }
     })();
   });
