@@ -18,6 +18,10 @@ tmp/
 
 # 冒烟测试产物（截图 / 断言日志）
 .smoke-out/
+# 手动重定向出来的断言 / 语法检查结果
+.smoke-out.txt
+.check-out.txt
+.tmp-probe.txt
 
 # 依赖（本项目本身零依赖，仅预防）
 node_modules/

@@ -27,13 +27,15 @@ const SIZE = process.env.SMOKE_SIZE || '1440,900';
 
 const STEPS = [
   'gate', 'home', 'draw-where', 'draw-what', 'follow',
+  'origin', 'origin-what', 'origin-tight', 'origin-narrow',
+  'places', 'legacy',
   'editor', 'roster', 'share', 'bulk', 'theme', 'switches',
   'import', 'badimport', 'empty',
   'galaxy', 'galaxy-narrow', 'galaxy-many'
 ];
 
 // 需要模拟窄屏的步骤 → iframe 宽度(px)
-const STEP_VW = { 'galaxy-narrow': 430 };
+const STEP_VW = { 'galaxy-narrow': 430, 'origin-narrow': 430 };
 
 const CANDIDATES = [
   process.env.EDGE_PATH,
@@ -105,7 +107,9 @@ function runStep(browser, step, keep) {
   return log;
 }
 
-/* ---- 持久化验证：同一 profile 连开两次 ---- */
+/* ---- 持久化验证：同一 profile 连开两次 ----
+   第一次跑 origin 步骤（会选中教学馆作为出发地并落盘），
+   第二次以 reload 步骤重开，断言食堂 / 地点 / 出发地都还在。 */
 function runPersist(browser, keep) {
   const profile = profileDir('persist');
   const common = [
@@ -113,8 +117,8 @@ function runPersist(browser, keep) {
     '--hide-scrollbars', '--window-size=' + SIZE, '--virtual-time-budget=' + BUDGET,
     '--user-data-dir=' + profile
   ];
-  runOnce(browser, common.concat(['--dump-dom', BASE + '/tools/smoke/drive.html?step=home&fx=off']));
-  const dom = runOnce(browser, common.concat(['--dump-dom', BASE + '/tools/smoke/drive.html?step=reload&fx=off']));
+  runOnce(browser, common.concat(['--dump-dom', BASE + '/tools/smoke/drive.html?step=origin&fx=off']));
+  const dom = runOnce(browser, common.concat(['--dump-dom', BASE + '/tools/smoke/drive.html?step=reload&fx=off&expect=p-jxg']));
   const log = extractLog(dom);
   if (keep && log) {
     fs.mkdirSync(OUT, { recursive: true });
@@ -146,7 +150,7 @@ console.log('目标： ' + BASE + '  （先确认静态服务器已启动）\n')
 let failed = 0;
 for (const step of targets) {
   const log = step === 'persist' ? runPersist(browser, keep) : runStep(browser, step, keep);
-  const ok = log && !/EXCEPTION/.test(log) && !/err=(?!-)/.test(log) && !/VERDICT=SQUEEZED/.test(log);
+  const ok = log && !/EXCEPTION/.test(log) && !/err=(?!-)/.test(log) && !/VERDICT=(?!OK)/.test(log);
   if (!ok) failed++;
   console.log('───── ' + step + ' : ' + (ok ? 'OK' : 'FAIL') + ' ─────');
   console.log(log || '(没有拿到断言输出)');

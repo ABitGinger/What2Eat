@@ -31,6 +31,9 @@
     gate      仅看首次进入引导
     reload    同一浏览器 profile 下第二次打开，验证自动读取本地数据
     draw-where / what / follow   三种抽取
+    origin / origin-what / origin-tight   出发地：正常 / 抽档口 / 附近没食堂时的退化
+    places    地点编辑器：改名、新增、勾「离哪近」、删除地点后的悬空引用清理
+    legacy    v2 老数据的升级（自动补地点 + 按名字补「离哪近」）
     editor / roster / share / bulk / theme / switches / import / badimport / empty
     galaxy / galaxy-narrow / galaxy-many   清单星系的排布断言（不重叠 / 不越界）
 
@@ -39,6 +42,7 @@
     scroll=1  每一步顺带滚到目标附近（截图用）
     fx=off    关掉背景动效，让 headless 的虚拟时间预算不被 rAF 吃光
     nolog=1   跑完把调试浮层藏掉（只截图时用，--dump-dom 抓断言时不要加）
+    expect=<id> 仅 reload 步骤用：断言上次退出时存的出发地就是它
 -->
 <iframe id="fr" src="../../index.html"></iframe>
 <script>
@@ -139,10 +143,18 @@
         if (step === 'gate') { log('gateHidden=' + q('#gate').hidden); return; }
 
         if (step === 'reload') {
+          var rst = WTE.store.get();
+          var expOrigin = Q.get('expect');   // 例如 p-jxg：上一次开页时选的出发地
           log('reload: gateHidden=' + q('#gate').hidden);
           log('reload: hasStored=' + WTE.store.hasStored() + ' seen=' + WTE.store.seen());
           log('reload: bar=' + q('#bar-sub').textContent);
-          log('reload: canteens=' + WTE.store.get().canteens.length);
+          log('reload: canteens=' + rst.canteens.length + ' places=' + rst.places.length + ' origin=' + rst.origin);
+          log('reload: railOn=' + (qa('#origin-rail .is-on').map(function (c) {
+            return c.getAttribute('data-pid') || '(any)';
+          }).join(',') || '-'));
+          log('persist VERDICT=' + ((rst.canteens.length >= 16 &&
+              rst.places.length >= 11 &&
+              (!expOrigin || rst.origin === expOrigin)) ? 'OK' : 'MISS'));
           return;
         }
 
@@ -253,6 +265,135 @@
           return;
         }
 
+        if (step === 'origin' || step === 'origin-tight' || step === 'origin-what' || step === 'origin-narrow') {
+          var rail = qa('#origin-rail .origin__chip');
+          log('railChips=' + rail.length + ' places=' + WTE.store.get().places.length);
+          log('anyChip=' + (rail[0] ? rail[0].textContent.trim() : '-'));
+          log('defaultOn=' + ((q('#origin-rail .is-on') || {}).textContent || '-').trim());
+          log('defaultOrigin=' + JSON.stringify(WTE.store.get().origin));
+
+          var target = 'p-jxg';   // 教学馆
+          if (step === 'origin-tight') {
+            // 造一个没有任何食堂挂着的地点：抽取应该优雅退化成整份清单 + 给提示
+            WTE.store.mutate(function (st) {
+              st.places.push({ id: 'p-nobody', name: '荒岛', emoji: '🏝️', area: '' });
+            }, { noEmit: true });
+            // noEmit 不会触发重渲染，得手动把新地点画进出发地线路
+            WTE.ui.renderOrigin();
+            await sleep(60);
+            target = 'p-nobody';
+          }
+
+          var chip = q('#origin-rail [data-pid="' + target + '"]');
+          log('chipFound=' + !!chip);
+          chip.click();
+          await sleep(140);
+          log('afterPick origin=' + WTE.store.get().origin + ' ui=' + WTE.ui.state.origin);
+          log('hint=' + q('#origin-hint').textContent);
+          // 注意：setOrigin 之后整条线路会重建，得重新取节点，别读旧引用
+          var chip2 = q('#origin-rail [data-pid="' + target + '"]');
+          log('chipOn=' + chip2.classList.contains('is-on') + ' ariaChecked=' + chip2.getAttribute('aria-checked') +
+              ' onCount=' + qa('#origin-rail .is-on').length);
+
+          var mode = step === 'origin-what' ? 'what' : 'where';
+          WTE.ui.setMode(mode);
+          await WTE.ui.performDraw(mode);
+          await sleep(220);
+
+          var r = WTE.ui.state.result;
+          var realPicks = r.picks.filter(function (p) { return p.canteen; });
+          var hits = realPicks.filter(function (p) {
+            return (p.canteen.near || []).indexOf(target) >= 0;
+          }).length;
+          log('mode=' + r.mode + ' result.origin=' + r.origin);
+          log('picks=' + r.picks.map(function (p) {
+            return p.role + ':' + (p.stall ? p.stall.name + '@' + p.canteen.name : (p.canteen ? p.canteen.name : 'null'));
+          }).join(' | '));
+          log('nearHits=' + hits + '/' + realPicks.length);
+          log('warnings=' + (r.warnings.join(' / ') || '-'));
+          log('originLine=' + ((q('.result__origin') || {}).textContent || '-').trim());
+          log('nearBadges=' + qa('.pick__near').length);
+          var expectAll = step !== 'origin-tight';
+          // tight 用例：附近 0 家 -> 优雅退化到整份清单（不该抽到「离它近」的），且必须有降级提示
+          log('origin VERDICT=' + ((expectAll
+              ? (hits === realPicks.length && realPicks.length >= 2)
+              : (hits === 0 && realPicks.length >= 2 && r.warnings.length > 0)) ? 'OK' : 'MISS'));
+          await reveal('.result');
+          return;
+        }
+
+        if (step === 'places') {
+          q('#btn-settings').click();
+          await sleep(120);
+          q('[data-tab="data"]').click();
+          await sleep(140);
+          log('placeboxSub=' + q('#placebox-sub').textContent);
+          log('hiddenBefore=' + q('#places').hidden);
+          q('[data-act="toggle-places"]').click();
+          await sleep(140);
+          log('hiddenAfter=' + q('#places').hidden + ' rows=' + qa('.place').length);
+          log('counts=' + qa('.place__count').map(function (n) { return n.textContent; }).join(','));
+
+          // 改一个地点的名字：结果卡 / 出发地线路都要跟着变
+          var ni = q('.place[data-pid="p-jxg"] input[data-pfield="name"]');
+          log('nameBefore=' + ni.value);
+          ni.value = '第一教学馆';
+          ni.dispatchEvent(new w.Event('change', { bubbles: true }));
+          await sleep(140);
+          log('nameAfter=' + WTE.store.findPlace('p-jxg').name);
+          log('railLabel=' + ((q('#origin-rail [data-pid="p-jxg"] .origin__name') || {}).textContent || '-'));
+          var ni2 = q('.place[data-pid="p-jxg"] input[data-pfield="name"]');
+          ni2.value = '教学馆';
+          ni2.dispatchEvent(new w.Event('change', { bubbles: true }));
+          await sleep(100);
+
+          // 回车新增一个地点
+          var f = q('#place-add');
+          f.querySelector('input[name="placeName"]').value = '图书馆';
+          f.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+          await sleep(160);
+          var st1 = WTE.store.get();
+          log('afterAdd=' + st1.places.length + ' last=' + st1.places[st1.places.length - 1].name +
+              ' railChips=' + qa('#origin-rail .origin__chip').length);
+
+          // 给第一个食堂勾一个「离哪近」
+          var cid0 = st1.canteens[0].id;
+          q('.canteen[data-cid="' + cid0 + '"] [data-act="canteen-toggle"]').click();
+          await sleep(140);
+          var box = '.canteen[data-cid="' + cid0 + '"]';
+          log('nearChips=' + qa(box + ' .near').length + ' onBefore=' + qa(box + ' .near.is-on').length);
+          var off = qa(box + ' .near').filter(function (b) { return !b.classList.contains('is-on'); })[0];
+          off.click();
+          await sleep(160);
+          var c0 = WTE.store.findCanteen(cid0);
+          log('afterToggle near=' + JSON.stringify(c0.near) + ' onAfter=' + qa(box + ' .near.is-on').length);
+          log('railN=' + ((q('#origin-rail [data-pid="' + off.dataset.pid + '"] .origin__n') || {}).textContent || '-'));
+          log('sub=' + ((q(box + ' .canteen__sub') || {}).textContent || '-'));
+
+          // 删掉一个地点：引用它的标记要一起清掉
+          var victim = 'p-nobody';
+          WTE.store.mutate(function (st) {
+            st.places.push({ id: 'p-nobody', name: '临时荒岛', emoji: '🏝️', area: '' });
+            st.canteens[0].near.push('p-nobody');
+          }, { noEmit: true });
+          WTE.ui.renderEditor();
+          await sleep(100);
+          w.confirm = function () { return true; };
+          q('.place[data-pid="' + victim + '"] [data-act="place-del"]').click();
+          await sleep(160);
+          var st2 = WTE.store.get();
+          log('afterDel places=' + st2.places.length + ' dangling=' +
+              st2.canteens.reduce(function (n, c) {
+                return n + (c.near || []).filter(function (id) { return !WTE.store.findPlace(id); }).length;
+              }, 0));
+
+          log('places VERDICT=' + ((st2.places.length === 12 &&
+              !st2.canteens.some(function (c) {
+                return (c.near || []).some(function (id) { return !WTE.store.findPlace(id); });
+              })) ? 'OK' : 'MISS'));
+          return;
+        }
+
         if (step === 'share') {
           q('#btn-settings').click();
           await sleep(80);
@@ -265,10 +406,17 @@
           var before = WTE.store.stats();
           var rt = await w.WTE.store.decodePayload(u).then(function (raw) {
             var res = w.WTE.store.normalize(raw);
+            var nearN = res.state.canteens.reduce(function (n, c) { return n + (c.near || []).length; }, 0);
             return res.state.canteens.length + '/' +
-              res.state.canteens.reduce(function (n, c) { return n + c.stalls.length; }, 0);
+              res.state.canteens.reduce(function (n, c) { return n + c.stalls.length; }, 0) +
+              '/p' + res.state.places.length + '/n' + nearN;
           });
-          log('roundtrip=' + rt + ' original=' + before.canteens + '/' + before.stalls);
+          var self = WTE.store.get();
+          var selfNear = self.canteens.reduce(function (n, c) { return n + (c.near || []).length; }, 0);
+          log('roundtrip=' + rt + ' original=' + before.canteens + '/' + before.stalls +
+              '/p' + self.places.length + '/n' + selfNear);
+          log('share VERDICT=' + (rt === (before.canteens + '/' + before.stalls + '/p' + self.places.length + '/n' + selfNear)
+            ? 'OK' : 'MISS'));
           return;
         }
 
@@ -279,14 +427,50 @@
           await sleep(60);
           q('[data-act="open-bulk"]').click();
           await sleep(60);
-          q('#bulk-text').value = '测试食堂A\n- 档口1\n- 档口2\n测试食堂B > 只有这个档口';
+          q('#bulk-text').value = '测试食堂A @教学馆、综一\n- 档口1\n- 档口2\n测试食堂B > 只有这个档口\n测试食堂C @不存在的地方';
           q('[data-act="apply-bulk"]').click();
-          await sleep(140);
+          await sleep(180);
           var st = WTE.store.get();
           var last = st.canteens[st.canteens.length - 1];
           log('total=' + st.canteens.length + ' last=' + last.name + ' [' +
               last.stalls.map(function (s) { return s.name; }).join(',') + ']');
+          var a = st.canteens[st.canteens.length - 3];
+          log('A=' + a.name + ' near=' + JSON.stringify(a.near));
+          log('toast=' + toastText());
           log('stats=' + JSON.stringify(WTE.store.stats()));
+          log('bulk VERDICT=' + ((a.near.length === 2 && last.near.length === 0) ? 'OK' : 'MISS'));
+          return;
+        }
+
+        if (step === 'legacy') {
+          // 模拟老版本（v2）本地数据：有大工食堂名，但完全没有 places / near
+          var v2 = {
+            version: 2,
+            meta: { title: '今天吃什么', source: '大连理工大学 · 凌水主校区' },
+            theme: { primary: '#ff3d6e' },
+            canteens: [
+              { id: 'c1', name: '中心食堂', stalls: [{ id: 'c1-s1', name: '麻辣香锅' }] },
+              { id: 'c2', name: '沁园餐厅', stalls: [{ id: 'c2-s1', name: '牛肉面' }] },
+              { id: 'c3', name: '我自己的小灶', stalls: [{ id: 'c3-s1', name: '炒饭' }] }
+            ]
+          };
+          var lres = WTE.store.normalize(v2);
+          log('places=' + lres.state.places.length + ' [' +
+              lres.state.places.map(function (p) { return p.name; }).join('、') + ']');
+          log('near.中心食堂=' + JSON.stringify(lres.state.canteens[0].near));
+          log('near.沁园餐厅=' + JSON.stringify(lres.state.canteens[1].near));
+          log('near.我自己的小灶=' + JSON.stringify(lres.state.canteens[2].near));
+          log('warnings=' + lres.warnings.join(' / '));
+          var legacyOk = lres.state.places.length > 0 &&
+            lres.state.canteens[0].near.length > 0 &&
+            lres.state.canteens[1].near.length > 0 &&
+            lres.state.canteens[2].near.length === 0;
+          log('legacy VERDICT=' + (legacyOk ? 'OK' : 'MISS'));
+
+          // 反过来：名字对不上时不该凭空塞地点
+          var other = WTE.store.normalize({ version: 2, canteens: [{ name: '我家楼下面馆', stalls: [{ name: '牛肉面' }] }] });
+          log('otherPlaces=' + other.state.places.length);
+          log('legacy2 VERDICT=' + (other.state.places.length === 0 ? 'OK' : 'MISS'));
           return;
         }
 
