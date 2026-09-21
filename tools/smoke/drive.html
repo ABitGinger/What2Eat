@@ -236,9 +236,12 @@
               !q('#result').hidden &&
               !!oRow && /任意出发/.test(oRow.textContent)) ? 'OK' : 'MISS'));
           // 断言都跑完了，把控制台收起来再截图 —— 遮罩会把舞台压暗，
-          // 而这张图要拍的正是「出发地线路上只剩任意」那一条
-          q('#panel-settings [data-act="close-settings"]').click();
-          await sleep(420);
+          // 而这张图要拍的正是「出发地线路上只剩任意」那一条。
+          // 想看「地点面板里一行都没有」那张，手动访问时加 &panel=1。
+          if (Q.get('panel') !== '1') {
+            q('#panel-settings [data-act="close-settings"]').click();
+            await sleep(420);
+          }
           await reveal('#origin');
           return;
         }
