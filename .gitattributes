@@ -1,0 +1,26 @@
+# 统一换行符，避免 Windows / macOS 协作者之间产生无意义的 diff
+* text=auto eol=lf
+
+# 二进制
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.zip binary
+
+# 文本
+*.html text eol=lf
+*.css  text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.svg  text eol=lf
+
+# 让 git 在 diff 时把生成物当二进制，不逐行比较
+*.min.js -diff
+*.min.css -diff
