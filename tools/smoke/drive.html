@@ -152,8 +152,13 @@
           log('reload: railOn=' + (qa('#origin-rail .is-on').map(function (c) {
             return c.getAttribute('data-pid') || '(any)';
           }).join(',') || '-'));
-          log('persist VERDICT=' + ((rst.canteens.length >= 16 &&
-              rst.places.length >= 11 &&
+          // 基线不写死：拿内置默认数据当「至少得有这么多」，示例数据改了也不会破测试
+          var DEF = w.WTE_DEFAULT_DATA || {};
+          var minC = (DEF.canteens || []).length;
+          var minP = (DEF.places || []).length;
+          log('reload: expectAtLeast canteens>=' + minC + ' places>=' + minP);
+          log('persist VERDICT=' + ((rst.canteens.length >= minC &&
+              rst.places.length >= minP &&
               (!expOrigin || rst.origin === expOrigin)) ? 'OK' : 'MISS'));
           return;
         }
@@ -327,6 +332,9 @@
           await sleep(120);
           q('[data-tab="data"]').click();
           await sleep(140);
+          // 先记下默认地点数，别把数量写死（示例数据会改）
+          var basePlaces = WTE.store.get().places.length;
+          log('basePlaces=' + basePlaces);
           log('placeboxSub=' + q('#placebox-sub').textContent);
           log('hiddenBefore=' + q('#places').hidden);
           q('[data-act="toggle-places"]').click();
@@ -387,7 +395,8 @@
                 return n + (c.near || []).filter(function (id) { return !WTE.store.findPlace(id); }).length;
               }, 0));
 
-          log('places VERDICT=' + ((st2.places.length === 12 &&
+          // 净增 1 个（新增了「图书馆」，临时造的 p-nobody 又被删掉）
+          log('places VERDICT=' + ((st2.places.length === basePlaces + 1 &&
               !st2.canteens.some(function (c) {
                 return (c.near || []).some(function (id) { return !WTE.store.findPlace(id); });
               })) ? 'OK' : 'MISS'));
