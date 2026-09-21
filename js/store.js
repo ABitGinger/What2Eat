@@ -25,6 +25,9 @@
   var state = null;
   var listeners = [];
   var saveTimer = null;
+  // state 里装的只是一份「占位数据」（用户还没在首次进入的引导上做选择）时，
+  // 不能落盘 —— 否则关掉标签页再打开，就会像「已经选过」一样跳过引导。
+  var transient = false;
 
   /* ------------------------------------------------------------ 规范化 */
   function str(v, fallback) {
@@ -341,7 +344,7 @@
   var lastError = null;
 
   function save() {
-    if (!state) return;
+    if (!state || transient) return;
     try {
       state.updatedAt = Date.now();
       global.localStorage.setItem(KEY, JSON.stringify(state));
@@ -355,6 +358,23 @@
   function saveSoon() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 220);
+  }
+
+  /** 本机都存了些什么（面板上要如实告诉用户数据在哪儿） */
+  function storageInfo() {
+    var available = true;
+    try {
+      global.localStorage.setItem('wte.probe', '1');
+      global.localStorage.removeItem('wte.probe');
+    } catch (e) { available = false; }
+    return {
+      key: KEY,
+      legacyKey: KEY_LEGACY,
+      seenKey: KEY_SEEN,
+      stored: hasStored(),
+      seen: seen(),
+      available: available
+    };
   }
 
   /* ------------------------------------------------------------ 订阅 */
@@ -382,6 +402,7 @@
     var o = opts || {};
     if (!state) state = normalize({}, null).state;
     fn(state);
+    transient = false;
     state.version = SCHEMA_VERSION;
     state.updatedAt = Date.now();
     if (!o.silent) saveSoon();
@@ -392,6 +413,7 @@
   function setState(nextRaw, fallbackMeta, opts) {
     var res = normalize(nextRaw, fallbackMeta);
     state = res.state;
+    transient = false;
     save();
     if (!(opts && opts.noEmit)) emit({ type: 'replace' });
     return res;
@@ -404,15 +426,35 @@
   /** 只在内存里装一份数据，不落盘、不广播（用于启动时的占位状态） */
   function setTransient(data) {
     state = normalize(U.deepClone(data), null).state;
+    transient = true;
     return state;
   }
 
   function clearAll() {
+    clearTimeout(saveTimer);
     try {
       global.localStorage.removeItem(KEY);
       global.localStorage.removeItem(KEY_LEGACY);
     } catch (e) { /* 忽略 */ }
     state = null;
+    transient = false;
+    emit({ type: 'replace' });
+  }
+
+  /**
+   * 回到「从没来过」：清单、地点、主题、统计，连「已经来过」的标记一起抹掉。
+   * 下次打开会重新走一遍首次进入的引导 —— 所以别再写回任何东西。
+   */
+  function resetAll() {
+    clearTimeout(saveTimer);
+    try {
+      global.localStorage.removeItem(KEY);
+      global.localStorage.removeItem(KEY_LEGACY);
+      global.localStorage.removeItem(KEY_SEEN);
+    } catch (e) { /* 忽略 */ }
+    state = null;
+    transient = false;
+    lastError = null;
     emit({ type: 'replace' });
   }
 
@@ -598,6 +640,7 @@
     seen: seen,
     markSeen: markSeen,
     clearSeen: clearSeen,
+    storageInfo: storageInfo,
     get: get,
     stats: stats,
     save: save,
@@ -610,6 +653,7 @@
     resetTo: resetTo,
     setTransient: setTransient,
     clearAll: clearAll,
+    resetAll: resetAll,
     findCanteen: findCanteen,
     findPlace: findPlace,
     placeUsage: placeUsage,
