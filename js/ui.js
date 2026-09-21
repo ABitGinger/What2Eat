@@ -704,7 +704,8 @@
     panel.classList.remove('is-open');
     global.setTimeout(function () {
       panel.hidden = true;
-      if (dom.settings.hidden && dom.roster.hidden) dom.body.dataset.locked = 'false';
+      // 引导还开着的时候别解锁 —— 重置之后这里会抢在 showGate() 后面把锁打开
+      if (dom.settings.hidden && dom.roster.hidden && dom.gate.hidden) dom.body.dataset.locked = 'false';
     }, 280);
   }
 
@@ -1129,7 +1130,9 @@
     if (dom.storeNote && st) {
       var bytes = 0;
       try { bytes = new Blob([S.toJSON(true)]).size; } catch (e2) { bytes = S.toJSON(true).length; }
+      var info = S.storageInfo();
       dom.storeNote.textContent = '配置体积约 ' + U.bytesToHuman(bytes) +
+        ' · 只存在这台设备的浏览器里（localStorage · ' + info.key + '）' +
         ' · 上次更新 ' + U.formatTime(st.updatedAt || Date.now()) +
         ' · 已解锁成就 ' + ((st.stats.achievements || []).length) + ' / ' + S.ACHIEVEMENTS.length;
     }
@@ -1288,6 +1291,39 @@
   function hideGate() {
     dom.gate.hidden = true;
     dom.body.dataset.locked = 'false';
+  }
+
+  /**
+   * 重置 —— 和「清空全部」不是一回事：
+   * 清空是换一份清单（这条设备、这份配置还在），重置是连身份一起换掉，
+   * 抹掉本机所有数据后重新回到「第一次进来」的那道门，从头选「用示例还是自己填」。
+   */
+  function resetEverything() {
+    if (!confirm('重置会抹掉这台设备上的一切：清单、地点、主题、统计与成就，且无法撤销。\n\n' +
+                 '想留个底就先「导出 .json」或复制一条分享链接。\n\n' +
+                 '确定要重新开始吗？会回到最初那道「用示例数据还是自己填」的门。')) return;
+
+    // 地址栏里可能还挂着一条分享串，留着的话刷新就又把它导回来了
+    try {
+      if (global.location.hash && global.history && global.history.replaceState) {
+        global.history.replaceState(null, '', global.location.pathname + global.location.search);
+      }
+    } catch (e) { /* 忽略 */ }
+
+    S.resetAll();                             // 存储：状态 + 「来过」的标记，全没
+    S.setTransient(global.WTE_BLANK_DATA);    // 内存里摆一份占位，等用户在门上选
+
+    ui.origin = null;
+    ui.originDirty = false;
+    ui.placesOpen = false;
+    closePanel('settings');
+    clearResult();
+    applyTheme();
+    refreshLightweight();
+    renderEditor();
+    renderSharePane();
+    setMode('where');
+    showGate();
   }
 
   /* ================================================================
@@ -1870,6 +1906,9 @@
         S.save();
         afterDataReplace('已清空，去「食堂与档口」页签填自己的清单吧。');
         return;
+      case 'reset-all':
+        resetEverything();
+        return;
 
       /* 结果 */
       case 'draw-again': performDraw(ui.mode); return;
@@ -2083,6 +2122,7 @@
     renderSharePane: renderSharePane,
     clearResult: clearResult,
     setMode: setMode,
+    resetEverything: resetEverything,
     openPanel: openPanel,
     closePanel: closePanel,
     toast: toast,

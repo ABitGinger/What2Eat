@@ -273,7 +273,11 @@
             <button class="btn btn--ghost btn--sm" type="button" data-act="export-md">导出 .md 清单</button>
             <button class="btn btn--ghost btn--sm" type="button" data-act="load-demo">载入大工示例</button>
             <button class="btn btn--danger btn--sm" type="button" data-act="clear-all">清空全部</button>
+            <button class="btn btn--danger btn--reset btn--sm" type="button" data-act="reset-all"
+                    title="抹掉本机所有数据，回到「第一次进来」的引导，重新选择用示例还是自己填">重置</button>
           </div>
+          <p class="mini">动手前先留底：<b>清空全部</b>只清掉清单和地点；<b>重置</b>会把主题、统计、成就和「来过」的
+            记录一起抹掉，回到最初那道「用示例数据还是自己填」的门。</p>
           <p class="mini" id="store-note"></p>
         </div>
       </section>
@@ -336,7 +340,7 @@
       <li><span>1</span>清单、主题色都只存在这台设备的浏览器里</li>
       <li><span>2</span>先选「从哪出发」，就只抽离那儿近的食堂</li>
       <li><span>3</span>想换设备？生成一条链接或导出一个文件就行</li>
-      <li><span>4</span>不喜欢默认数据，随时一键清空重来</li>
+      <li><span>4</span>想从头再来？控制台里一键重置，回到这一页</li>
     </ul>
     <div class="gate__actions">
       <button class="btn btn--primary btn--lg" type="button" data-act="gate-skip">
